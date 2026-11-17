@@ -599,44 +599,105 @@ public class MainActivity extends Activity {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // PiP 画中画核心
+    // PiP 画中画（HTML5 video.requestPictureInPicture 方案）
+    // 这个方案最可靠：WebView 内的 Chrome 引擎处理，不依赖 Activity 生命周期
     // ──────────────────────────────────────────────────────────────
 
     /** 是否支持 PiP（Android 8.0+） */
     private boolean supportsPip() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O;
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE);
     }
 
     /**
-     * 用户按 Home / 最近任务键 —— 播放中自动进入 PiP（最原生最可靠）
-     * 悬浮窗作为 PiP 失败后的降级方案
+     * 用户按 Home / 最近任务键
+     * 优先用 HTML5 video.requestPictureInPicture()（WebView 原生支持，不黑屏）
+     * 降级：Activity PiP API → 再降级：悬浮窗
      */
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
         if (isInPipMode || isInFloatingWindow || webView == null) return;
 
-        // 先启动播放服务（上岛），不管 PiP 成不成功都要有 MediaStyle 通知
+        // 启动播放服务（上岛）
         startOrUpdatePlaybackService();
 
-        // 方案 1：直接尝试 PiP（同步调用，最快）
-        if (supportsPip()) {
-            try {
-                android.util.Log.i("MoonTV", "🚀 尝试进入 PiP...");
-                enterPictureInPictureModeSafe();
-                android.widget.Toast.makeText(this, "✅ 已进入小窗模式",
-                    android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            } catch (Exception e) {
-                android.util.Log.w("MoonTV", "⚠️ PiP 异常: " + e.getMessage());
-            }
-        }
+        // ✅ 方案 1：HTML5 video.requestPictureInPicture()
+        // 这个最可靠！Chrome/WebView 内部处理，video 渲染不中断
+        tryHtml5Pip();
+    }
 
-        // 方案 2：降级悬浮窗（需要先强制 video 进全屏拿到 customView）
-        android.widget.Toast.makeText(this, "PiP 不可用，尝试悬浮窗...",
-            android.widget.Toast.LENGTH_SHORT).show();
-        android.util.Log.i("MoonTV", "🚀 降级悬浮窗...");
-        tryEnterFloatingWindow();
+    /**
+     * 尝试 HTML5 PiP —— 让 WebView 内的 video 自己请求进入画中画
+     */
+    private void tryHtml5Pip() {
+        // 先检测 video 是否在播放
+        String js =
+            "(function() {" +
+            "  var v = document.querySelector('video');" +
+            "  if (!v) return 'no-video';" +
+            "  if (v.paused || v.ended) return 'not-playing';" +
+            "  if (!document.pictureInPictureEnabled) return 'pip-not-supported';" +
+            "  if (document.pictureInPictureElement) return 'already-pip';" +
+            // 先尝试退出全屏（全屏时 PiP 可能冲突）
+            "  if (document.fullscreenElement) { document.exitFullscreen().catch(function(){}); }" +
+            // 强制静音可以提高某些浏览器的成功率
+            "  var wasMuted = v.muted;" +
+            "  v.requestPictureInPicture()" +
+            "    .then(function(pipWin) { return 'pip-success'; })" +
+            "    .catch(function(err) { return 'pip-failed:' + err.message; });" +
+            "  return 'pip-requested';" +
+            "})();";
+
+        webView.evaluateJavascript(js, result -> {
+            android.util.Log.i("MoonTV", "HTML5 PiP JS result: " + result);
+
+            if (result != null && result.contains("pip-success")) {
+                android.widget.Toast.makeText(this, "✅ 已进入画中画",
+                    android.widget.Toast.LENGTH_SHORT).show();
+                isInPipMode = true;
+                return;
+            }
+
+            if (result != null && result.contains("pip-requested")) {
+                // 请求已发出，等系统响应
+                android.widget.Toast.makeText(this, "已请求画中画...",
+                    android.widget.Toast.LENGTH_SHORT).show();
+                // 同时也调 Activity PiP API 作为兜底
+                tryActivityPip();
+                return;
+            }
+
+            // HTML5 PiP 不支持，兜底 Activity PiP
+            android.util.Log.i("MoonTV", "HTML5 PiP 不可用(" + result + ")，兜底 Activity PiP");
+            tryActivityPip();
+        });
+    }
+
+    /** Activity 级 PiP API（兜底） */
+    private void tryActivityPip() {
+        if (!supportsPip()) {
+            android.widget.Toast.makeText(this, "PiP 不可用，尝试悬浮窗...",
+                android.widget.Toast.LENGTH_SHORT).show();
+            tryEnterFloatingWindow();
+            return;
+        }
+        try {
+            isInPipMode = true; // 提前设，防止 onPause 暂停 WebView
+            boolean ok = enterPictureInPictureMode(
+                new PictureInPictureParams.Builder()
+                    .setAspectRatio(new android.util.Rational(16, 9))
+                    .build());
+            android.util.Log.i("MoonTV", "Activity enterPictureInPictureMode: " + ok);
+            if (!ok) {
+                isInPipMode = false;
+                tryEnterFloatingWindow();
+            }
+        } catch (Exception e) {
+            android.util.Log.w("MoonTV", "Activity PiP 失败: " + e.getMessage());
+            isInPipMode = false;
+            tryEnterFloatingWindow();
+        }
     }
 
     /**
