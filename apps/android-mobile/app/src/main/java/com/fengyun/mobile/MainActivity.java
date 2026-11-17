@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     private static final String PREFS_NAME = "fengyun_mobile_prefs";
     private static final String KEY_SERVER_URL = "server_url";
     /** 默认服务器地址（兜底，弹窗为空时使用） */
-    private static final String DEFAULT_SERVER_URL = "http://m.tmnas.top:8880";
+    private static final String DEFAULT_SERVER_URL = "";
 
     private FrameLayout rootContainer;
     private WebView webView;
@@ -235,7 +235,7 @@ public class MainActivity extends Activity {
     private void askForServerUrl(final SharedPreferences prefs) {
         final EditText input = new EditText(this);
         input.setHint("例如 http://your-server.com:8880");
-        input.setText(DEFAULT_SERVER_URL);
+        input.setText(prefs.getString(KEY_SERVER_URL, ""));
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
 
@@ -247,11 +247,6 @@ public class MainActivity extends Activity {
                 .setPositiveButton("确定", (dialog, which) -> {
                     String raw = input.getText().toString().trim();
                     String normalized = buildAppUrl(raw);
-                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
-                    webView.loadUrl(normalized);
-                })
-                .setNegativeButton("使用默认", (dialog, which) -> {
-                    String normalized = buildAppUrl(DEFAULT_SERVER_URL);
                     prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
                     webView.loadUrl(normalized);
                 })

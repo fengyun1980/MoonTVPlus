@@ -26,7 +26,7 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
     private static GeckoRuntime runtime;
     private static final String PREFS_NAME = "moontv_tv_prefs";
     private static final String KEY_SERVER_URL = "server_url";
-    private static final String DEFAULT_SERVER_URL = "http://m.tmnas.top:8880";
+    private static final String DEFAULT_SERVER_URL = "";
 
     private GeckoSession session;
     private GeckoView geckoView;
@@ -86,7 +86,6 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
     private void askForServerUrl(final SharedPreferences prefs) {
         final EditText input = new EditText(this);
         input.setHint("例如 http://your-server.com:8880");
-        input.setText(DEFAULT_SERVER_URL);
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
 
@@ -98,11 +97,6 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
                 .setPositiveButton("确定", (dialog, which) -> {
                     String raw = input.getText().toString().trim();
                     String normalized = buildTvUrl(raw);
-                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
-                    session.loadUri(withLocalRemoteHash(normalized));
-                })
-                .setNegativeButton("使用默认", (dialog, which) -> {
-                    String normalized = buildTvUrl(DEFAULT_SERVER_URL);
                     prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
                     session.loadUri(withLocalRemoteHash(normalized));
                 })

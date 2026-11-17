@@ -9,7 +9,7 @@ on:
       base_url:
         description: '服务端 Base URL（不带路径，例如 https://example.com）'
         required: true
-        default: 'http://m.tmnas.top:8880'
+        default: ''
         type: string
       app_name:
         description: 'APP 桌面显示名称'

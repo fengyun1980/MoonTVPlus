@@ -142,7 +142,7 @@ export function getSingleFavoriteUpdateEmailTemplate(
   return getFavoriteUpdateEmailTemplate(
     userName,
     [{ title, oldEpisodes, newEpisodes, url, cover }],
-    url.split('/play')[0] || 'http://m.tmnas.top:8880',
+    url.split('/play')[0] || 'https://example.com',
     siteName
   );
 }
