@@ -3,12 +3,13 @@
     android:id="@+id/root_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/black">
+    android:background="@color/loading_bg">
 
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layerType="hardware" />
+        android:layerType="hardware"
+        android:background="@null" />
 
 </FrameLayout>

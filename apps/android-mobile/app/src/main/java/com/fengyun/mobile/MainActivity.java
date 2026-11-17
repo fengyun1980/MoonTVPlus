@@ -134,16 +134,19 @@ public class MainActivity extends Activity {
 
     private void setupImmersive() {
         Window window = getWindow();
-        // 允许内容延伸到状态栏/导航栏（适配全面屏、刘海屏、灵动岛区域）
+        // 只用 LAYOUT_* 系列：让内容延伸到状态栏/导航栏区域（全面屏/刘海屏适配）
+        // 不要同时加 SYSTEM_UI_FLAG_FULLSCREEN / HIDE_NAVIGATION，
+        // 它们会让 window 实际尺寸变小，WebView 布局会错位露出黑边
         window.getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         );
-        // 保持屏幕常亮（播放视频时）
+        // 半透明状态栏 + 半透明导航栏，防止某些机型闪黑
+        window.setStatusBarColor(android.graphics.Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.setNavigationBarColor(android.graphics.Color.TRANSPARENT);
+        }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 

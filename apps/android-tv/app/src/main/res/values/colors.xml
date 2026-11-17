@@ -1,3 +1,4 @@
 <resources>
     <color name="black">#000000</color>
+    <color name="loading_bg">#0a0a0a</color>
 </resources>

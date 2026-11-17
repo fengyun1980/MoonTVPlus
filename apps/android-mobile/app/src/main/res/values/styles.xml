@@ -3,7 +3,7 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowFullscreen">true</item>
-        <item name="android:windowBackground">@color/black</item>
+        <item name="android:windowBackground">@color/loading_bg</item>
         <item name="android:fontFamily">sans</item>
         <!-- 透明状态栏，适配全面屏/刘海屏 -->
         <item name="android:windowTranslucentStatus">false</item>
