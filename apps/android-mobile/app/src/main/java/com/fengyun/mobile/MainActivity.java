@@ -178,17 +178,26 @@ public class MainActivity extends Activity {
 
     private void setupImmersive() {
         Window window = getWindow();
-        // ✅ 正常浏览模式：内容可以画到状态栏后面，但状态栏/导航栏**保持可见**
-        // 只有全屏视频时才真正隐藏（在 enterFullscreenVideo 里处理）
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false);
         }
-        // 透明状态栏 + 透明导航栏（但按钮/图标还在）
         window.getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+
+        // ✅ 关键：用 WindowInsets 给根容器加 padding
+        // 让 WebView 内容从状态栏下方开始，不会被状态栏盖住
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            rootContainer.setOnApplyWindowInsetsListener((v, insets) -> {
+                android.graphics.Insets statusBar = insets.getInsets(android.view.WindowInsets.Type.statusBars());
+                android.graphics.Insets navBar = insets.getInsets(android.view.WindowInsets.Type.navigationBars());
+                v.setPadding(0, statusBar.top, 0, navBar.bottom);
+                android.util.Log.d("MoonTV", "WindowInsets: statusBar.top=" + statusBar.top + " navBar.bottom=" + navBar.bottom);
+                return insets;
+            });
+        }
     }
 
     @Override
@@ -376,6 +385,9 @@ public class MainActivity extends Activity {
         }
         customView = videoView;
         customViewCallback = callback;
+
+        // ✅ 移除 padding，让全屏视频占满整个屏幕
+        rootContainer.setPadding(0, 0, 0, 0);
 
         // 隐藏 WebView
         webView.setVisibility(View.GONE);
