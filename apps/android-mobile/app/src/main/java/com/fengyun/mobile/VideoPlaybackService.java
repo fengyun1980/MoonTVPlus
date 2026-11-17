@@ -236,7 +236,7 @@ public class VideoPlaybackService extends Service {
         MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "风云影视");
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "MoonTV");
 
         if (cover != null) {
             builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, cover);
@@ -380,7 +380,7 @@ public class VideoPlaybackService extends Service {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(currentTitle)
-                .setContentText("风云影视 — 正在观看")
+                .setContentText("MoonTV — 正在观看")
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentIntent(contentPi)
                 .setOngoing(true) // 持续通知（播放中不能被划掉）
@@ -456,7 +456,7 @@ public class VideoPlaybackService extends Service {
                 "          \"picInfo\": { \"type\": 1, \"pic\": \"miui.focus.pic_cover\" },\n" +
                 "          \"textInfo\": {\n" +
                 "            \"title\": \"" + escapeJson(title) + "\",\n" +
-                "            \"content\": \"风云影视\"\n" +
+                "            \"content\": \"MoonTV\"\n" +
                 "          }\n" +
                 "        }\n" +
                 "      },\n" +

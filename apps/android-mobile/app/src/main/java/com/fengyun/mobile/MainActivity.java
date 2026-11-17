@@ -137,7 +137,7 @@ public class MainActivity extends Activity {
         input.setLayoutParams(lp);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle(firstLaunch ? "🏝️ 欢迎使用风云影视" : "修改服务器地址")
+                .setTitle(firstLaunch ? "🏝️ 欢迎使用 MoonTV" : "修改服务器地址")
                 .setMessage(firstLaunch
                         ? "请输入你的服务端地址（例如 https://your-server.com）\n\n" +
                           "后续可在 APP 设置里修改。长按返回键也可弹出此对话框。"
