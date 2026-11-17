@@ -224,9 +224,9 @@ public class MainActivity extends Activity {
         s.setUseWideViewPort(true);
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
-        s.setSupportZoom(true);
-        s.setBuiltInZoomControls(true);
-        s.setDisplayZoomControls(false);
+        s.setSupportZoom(false);          // 禁止双指缩放
+        s.setBuiltInZoomControls(false);  // 禁用内置缩放控件
+        s.setDisplayZoomControls(false);  // 不显示缩放按钮
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
