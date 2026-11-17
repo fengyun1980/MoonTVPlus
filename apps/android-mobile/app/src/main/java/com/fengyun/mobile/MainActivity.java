@@ -1062,13 +1062,11 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
-                // 只对主页面加载错误弹对话框（子资源如图片/JS 失败不弹）
                 if (request.isForMainFrame()) {
                     String desc = error.getDescription() != null ? error.getDescription().toString() : "未知错误";
                     Log.e(TAG, "❌ WebView 主页面加载失败: " + desc);
                     Toast.makeText(MainActivity.this, "加载失败: " + desc, Toast.LENGTH_LONG).show();
-                    // 预填原地址，用户点"确定"就是重试，改了就是换地址
-                    mainHandler.postDelayed(() -> showUrlDialog(baseUrl), 600);
+                    // 只 Toast 提示，不自动弹对话框 —— 地址存过就不要再烦用户
                 }
             }
 
@@ -1077,7 +1075,7 @@ public class MainActivity extends Activity {
                 handler.cancel();
                 Log.e(TAG, "❌ SSL 错误: " + error.getUrl());
                 Toast.makeText(MainActivity.this, "SSL 证书错误", Toast.LENGTH_LONG).show();
-                mainHandler.postDelayed(() -> showUrlDialog(baseUrl), 600);
+                // 只 Toast 提示，不自动弹对话框
             }
         });
 
