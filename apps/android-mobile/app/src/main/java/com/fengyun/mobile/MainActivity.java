@@ -175,17 +175,22 @@ public class MainActivity extends Activity {
 
     private void setupImmersive() {
         Window window = getWindow();
-        // 允许内容延伸到状态栏/导航栏（适配全面屏、刘海屏、灵动岛区域）
-        window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        );
+        // Android 11+ (API 30+) 用 setDecorFitsSystemWindows
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+        } else {
+            // Android 10 及以下用旧 flag
+            @SuppressLint("InlinedApi")
+            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+            window.getDecorView().setSystemUiVisibility(flags);
+        }
         // 保持屏幕常亮（播放视频时）
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     @Override
@@ -202,15 +207,7 @@ public class MainActivity extends Activity {
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void setupWebView() {
-        // 硬件加速（播放视频必需）
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        webView.setFocusable(true);
-        webView.setFocusableInTouchMode(true);
-        webView.requestFocus();
-
-        // JS Bridge —— Web 端通过 window.AndroidBridge.onPlayStart(...) 调用
-        webView.addJavascriptInterface(new MobileJsBridge(), "AndroidBridge");
-
+        // ⚠️ 重要：先开 JS，再注入 Bridge（顺序反了小米 HyperOS 上会失效）
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -227,7 +224,15 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
-        s.setUserAgentString(s.getUserAgentString() + " FengYunMobile WebView");
+        s.setUserAgentString(s.getUserAgentString() + " MoonTV Android");
+
+        // WebView 默认已硬件加速，不要 setLayerType 覆盖它！
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
+        webView.requestFocus();
+
+        // JS Bridge —— 在 setJavaScriptEnabled(true) 之后注入
+        webView.addJavascriptInterface(new MobileJsBridge(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -243,8 +248,30 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // 页面加载完后验证 AndroidBridge 注入成功
+                view.evaluateJavascript(
+                        "typeof window.AndroidBridge === 'object' ? 'OK' : 'FAIL'",
+                        value -> {
+                            android.util.Log.d("MoonTV", "Bridge injection: " + value
+                                    + " at url=" + url);
+                        }
+                );
+            }
+
+            @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, android.net.http.SslError error) {
                 handler.proceed(); // 内网自签名证书放行
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    android.util.Log.e("MoonTV", "WebView 加载错误: " + error.getDescription()
+                            + " code=" + error.getErrorCode()
+                            + " url=" + request.getUrl());
+                }
             }
         });
 
@@ -296,10 +323,13 @@ public class MainActivity extends Activity {
     // ──────────────────────────────────────────────────────────────
 
     private class MobileJsBridge {
+        private static final String TAG = "MoonTV.Bridge";
 
         /** Web 端播放开始时调用 */
         @JavascriptInterface
         public void onPlayStart(final String title, final String coverUrl, final String episode) {
+            android.util.Log.i(TAG, "onPlayStart title=" + title + " episode=" + episode
+                    + " cover=" + (coverUrl != null ? coverUrl.substring(0, Math.min(60, coverUrl.length())) : "null"));
             mainHandler.post(() -> {
                 isPlaying = true;
                 currentTitle = title == null ? "" : title;
@@ -311,6 +341,7 @@ public class MainActivity extends Activity {
         /** Web 端暂停 */
         @JavascriptInterface
         public void onPlayPause() {
+            android.util.Log.i(TAG, "onPlayPause");
             mainHandler.post(() -> {
                 isPlaying = false;
                 if (playbackService != null) playbackService.notifyPaused();
@@ -320,6 +351,7 @@ public class MainActivity extends Activity {
         /** Web 端恢复播放 */
         @JavascriptInterface
         public void onPlayResume() {
+            android.util.Log.i(TAG, "onPlayResume");
             mainHandler.post(() -> {
                 isPlaying = true;
                 if (playbackService != null) playbackService.notifyPlaying();
@@ -329,6 +361,7 @@ public class MainActivity extends Activity {
         /** Web 端停止播放 */
         @JavascriptInterface
         public void onPlayEnd() {
+            android.util.Log.i(TAG, "onPlayEnd");
             mainHandler.post(() -> {
                 isPlaying = false;
                 currentTitle = "";
@@ -340,6 +373,8 @@ public class MainActivity extends Activity {
         /** 进度更新（秒） */
         @JavascriptInterface
         public void onPlayProgress(final int positionSec, final int durationSec) {
+            // 进度日志可能刷屏，用 debug 级别
+            android.util.Log.d(TAG, "onPlayProgress " + positionSec + "/" + durationSec);
             mainHandler.post(() -> {
                 if (playbackService != null) {
                     playbackService.updateProgress(positionSec, durationSec);
@@ -350,6 +385,7 @@ public class MainActivity extends Activity {
         /** 当前是否在 PiP 模式 */
         @JavascriptInterface
         public boolean isInPip() {
+            android.util.Log.d(TAG, "isInPip=" + isInPipMode);
             return isInPipMode;
         }
     }
