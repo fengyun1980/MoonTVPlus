@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Rect;
 import android.net.Uri;
@@ -303,7 +304,7 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 进入全屏视频 —— 隐藏所有系统栏，视频占满整个屏幕
+     * 进入全屏视频 —— 隐藏所有系统栏，视频占满整个屏幕，强制横屏
      */
     private void enterFullscreenVideo(View videoView, WebChromeClient.CustomViewCallback callback) {
         if (customView != null) {
@@ -323,6 +324,9 @@ public class MainActivity extends Activity {
         fullscreenContainer.addView(videoView, lp);
         fullscreenContainer.setVisibility(View.VISIBLE);
 
+        // ⚠️ 关键：强制横屏（全屏视频时屏幕自动旋转）
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+
         // 强制全屏 —— 隐藏状态栏、导航栏，延伸到刘海/挖孔屏区域
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -331,7 +335,6 @@ public class MainActivity extends Activity {
         window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+
             window.setDecorFitsSystemWindows(false);
         }
         window.getDecorView().setSystemUiVisibility(
@@ -342,23 +345,26 @@ public class MainActivity extends Activity {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
 
-        android.util.Log.i("MoonTV", "✅ 视频已进入全屏");
+        android.util.Log.i("MoonTV", "✅ 视频已进入全屏 + 强制横屏");
     }
 
     /**
-     * 退出全屏视频 —— 恢复系统 UI
+     * 退出全屏视频 —— 恢复竖屏 + 系统 UI
      */
     private void exitFullscreenVideo() {
         if (customView == null) return;
+
+        // ⚠️ 恢复竖屏
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
 
         Window window = getWindow();
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false); // 保持沉浸式
+            window.setDecorFitsSystemWindows(false);
         }
-        setupImmersive(); // 恢复普通沉浸式（不是全屏视频那种）
+        setupImmersive();
 
         fullscreenContainer.removeView(customView);
         fullscreenContainer.setVisibility(View.GONE);
@@ -371,7 +377,7 @@ public class MainActivity extends Activity {
             customViewCallback.onCustomViewHidden();
             customViewCallback = null;
         }
-        android.util.Log.i("MoonTV", "✅ 已退出全屏");
+        android.util.Log.i("MoonTV", "✅ 已退出全屏 + 恢复竖屏");
     }
 
     // ──────────────────────────────────────────────────────────────
