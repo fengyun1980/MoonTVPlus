@@ -14,6 +14,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 import org.json.JSONObject;
 import org.mozilla.geckoview.GeckoRuntime;
@@ -26,7 +27,11 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
     private static GeckoRuntime runtime;
     private static final String PREFS_NAME = "moontv_tv_prefs";
     private static final String KEY_SERVER_URL = "server_url";
+    private static final String KEY_USERNAME = "username";
+    private static final String KEY_PASSWORD = "password";
     private static final String DEFAULT_SERVER_URL = "";
+
+    private boolean loginAutoSubmitted = false;
 
     private GeckoSession session;
     private GeckoView geckoView;
@@ -68,38 +73,92 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
                 canGoBack = canGoBackValue;
             }
         });
+        // GeckoView 页面加载完成回调 → 自动填登录表单
+        session.setContentDelegate(new GeckoSession.ContentDelegate() {
+            @Override
+            public void onSessionLoad(GeckoSession session, int loadState, String url) {
+                GeckoSession.ContentDelegate.super.onSessionLoad(session, loadState, url);
+                if (url != null && (url.contains("/login") || url.contains("login="))
+                        && !loginAutoSubmitted) {
+                    mainHandler.postDelayed(MainActivity.this::autoFillLoginForm, 500);
+                }
+            }
+        });
         session.open(runtime);
         geckoView.setSession(session);
         setupLocalRemoteServer();
 
-        // 读已保存的服务器地址，没有则弹框让用户输入
+        // 读已保存的服务器地址 + 账号密码
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String savedUrl = prefs.getString(KEY_SERVER_URL, null);
+
         if (savedUrl != null && !savedUrl.isEmpty()) {
             session.loadUri(withLocalRemoteHash(buildTvUrl(savedUrl)));
         } else {
-            askForServerUrl(prefs);
+            askForServerUrlThenCredentials(prefs);
         }
     }
 
-    /** 弹窗让用户输入服务器地址（首次启动时调用） */
-    private void askForServerUrl(final SharedPreferences prefs) {
-        final EditText input = new EditText(this);
-        input.setHint("例如 http://your-server.com:8880");
-        input.setSingleLine(true);
-        input.setSelectAllOnFocus(true);
+    /** 弹窗①：服务器地址 → 弹窗②：账号密码 → 加载 */
+    private void askForServerUrlThenCredentials(final SharedPreferences prefs) {
+        final EditText urlInput = new EditText(this);
+        urlInput.setHint("例如 http://your-server.com:8880");
+        urlInput.setSingleLine(true);
+        urlInput.setSelectAllOnFocus(true);
 
         new AlertDialog.Builder(this)
-                .setTitle("输入服务器地址")
+                .setTitle("① 输入服务器地址")
                 .setMessage("首次使用需要填写你的服务端地址")
-                .setView(input)
+                .setView(urlInput)
                 .setCancelable(false)
-                .setPositiveButton("确定", (dialog, which) -> {
-                    String raw = input.getText().toString().trim();
+                .setPositiveButton("下一步", (dialog, which) -> {
+                    String raw = urlInput.getText().toString().trim();
+                    if (raw.isEmpty()) { askForServerUrlThenCredentials(prefs); return; }
                     String normalized = buildTvUrl(raw);
                     prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
-                    session.loadUri(withLocalRemoteHash(normalized));
+                    askForCredentials(prefs, normalized);
                 })
+                .show();
+    }
+
+    /** 弹窗②：用户名 + 密码 */
+    private void askForCredentials(final SharedPreferences prefs, final String normalizedUrl) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        container.setPadding(pad, pad / 2, pad, 0);
+
+        final EditText uInput = new EditText(this);
+        uInput.setHint("用户名");
+        uInput.setSingleLine(true);
+        container.addView(uInput);
+
+        final EditText pInput = new EditText(this);
+        pInput.setHint("密码");
+        pInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        pInput.setSingleLine(true);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        pInput.setLayoutParams(p);
+        container.addView(pInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("② 输入账号密码")
+                .setMessage("用于自动登录")
+                .setView(container)
+                .setCancelable(false)
+                .setPositiveButton("确定", (dialog, which) -> {
+                    String u = uInput.getText().toString().trim();
+                    String pw = pInput.getText().toString();
+                    if (!u.isEmpty()) prefs.edit().putString(KEY_USERNAME, u).apply();
+                    if (!pw.isEmpty()) prefs.edit().putString(KEY_PASSWORD, pw).apply();
+                    loginAutoSubmitted = false;
+                    session.loadUri(withLocalRemoteHash(normalizedUrl));
+                })
+                .setNegativeButton("跳过", (dialog, which) ->
+                        session.loadUri(withLocalRemoteHash(normalizedUrl)))
                 .show();
     }
 
@@ -181,6 +240,37 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
             return url;
         }
         return url + "/tv";
+    }
+
+    /** GeckoView 版自动注入 JS 填登录表单 */
+    private void autoFillLoginForm() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String username = prefs.getString(KEY_USERNAME, null);
+        String password = prefs.getString(KEY_PASSWORD, null);
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) return;
+        loginAutoSubmitted = true;
+
+        String jsUser = username.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"");
+        String jsPass = password.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"");
+
+        String js = "javascript:"
+                + "(function(){"
+                + "var u=document.getElementById('username');"
+                + "var p=document.getElementById('password');"
+                + "if(!u||!p) return;"
+                + "var setter=Object.getOwnPropertyDescriptor("
+                + "window.HTMLInputElement.prototype,'value').set;"
+                + "setter.call(u,'" + jsUser + "');"
+                + "u.dispatchEvent(new Event('input',{bubbles:true}));"
+                + "setter.call(p,'" + jsPass + "');"
+                + "p.dispatchEvent(new Event('input',{bubbles:true}));"
+                + "var r=document.getElementById('remember-password');"
+                + "if(r&&!r.checked) r.click();"
+                + "var btn=document.querySelector('button[type=\"submit\"]')"
+                + "||document.querySelector('button');"
+                + "if(btn){btn.click();}"
+                + "})();void(0)";
+        if (session != null) session.loadUri(js);
     }
 
     @Override

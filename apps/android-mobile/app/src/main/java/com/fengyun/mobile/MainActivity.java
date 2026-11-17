@@ -36,6 +36,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -55,8 +56,12 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
     private static final String PREFS_NAME = "fengyun_mobile_prefs";
     private static final String KEY_SERVER_URL = "server_url";
-    /** 默认服务器地址（兜底，弹窗为空时使用） */
+    private static final String KEY_USERNAME = "username";
+    private static final String KEY_PASSWORD = "password";
     private static final String DEFAULT_SERVER_URL = "";
+
+    /** WebView 加载过登录页后，是否已自动提交过表单（避免用户手动修改后又被自动提交） */
+    private boolean loginAutoSubmitted = false;
 
     private FrameLayout rootContainer;
     private WebView webView;
@@ -107,14 +112,20 @@ public class MainActivity extends Activity {
         requestNotificationPermissionIfNeeded();
         bindPlaybackService();
 
-        // 读已保存的服务器地址，没有则弹框让用户输入
+        // 读已保存的服务器地址 + 账号密码
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String savedUrl = prefs.getString(KEY_SERVER_URL, null);
+        String savedUsername = prefs.getString(KEY_USERNAME, null);
+        String savedPassword = prefs.getString(KEY_PASSWORD, null);
+
         if (savedUrl != null && !savedUrl.isEmpty()) {
+            // 服务器地址已存，加载页面（登录页会自动注入表单）
             webView.loadUrl(buildAppUrl(savedUrl));
         } else {
-            askForServerUrl(prefs);
+            // 没有服务器地址 → 先弹窗填地址，存完再弹窗填账号密码
+            askForServerUrlThenCredentials(prefs);
         }
+        // 账号密码没存的话，下次进登录页时 Web 端也会让用户手动填
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -191,6 +202,16 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // 进入登录页 → 尝试自动填表单并提交（只做一次，避免用户手动改密码后被反复覆盖）
+                if (url != null && (url.contains("/login") || url.contains("login="))
+                        && !loginAutoSubmitted) {
+                    mainHandler.postDelayed(() -> autoFillLoginForm(), 500);
+                }
+            }
+
+            @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, android.net.http.SslError error) {
                 handler.proceed(); // 内网自签名证书放行
             }
@@ -231,49 +252,135 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 弹窗让用户输入服务器地址（首次启动或主动重置时调用） */
-    private void askForServerUrl(final SharedPreferences prefs) {
-        final EditText input = new EditText(this);
-        input.setHint("例如 http://your-server.com:8880");
-        input.setText(prefs.getString(KEY_SERVER_URL, ""));
-        input.setSingleLine(true);
-        input.setSelectAllOnFocus(true);
+    /** 弹窗①：输入服务器地址 → 存完 → 弹窗②：输入账号密码 → 存完 → 加载 WebView */
+    private void askForServerUrlThenCredentials(final SharedPreferences prefs) {
+        final EditText urlInput = new EditText(this);
+        urlInput.setHint("例如 http://your-server.com:8880");
+        urlInput.setSingleLine(true);
+        urlInput.setSelectAllOnFocus(true);
 
         new AlertDialog.Builder(this)
-                .setTitle("输入服务器地址")
-                .setMessage("首次使用需要填写你的服务端地址，格式如 http://your-server.com:8880")
-                .setView(input)
+                .setTitle("① 输入服务器地址")
+                .setMessage("首次使用需要填写你的服务端地址")
+                .setView(urlInput)
                 .setCancelable(false)
-                .setPositiveButton("确定", (dialog, which) -> {
-                    String raw = input.getText().toString().trim();
-                    String normalized = buildAppUrl(raw);
+                .setPositiveButton("下一步", (dialog, which) -> {
+                    String rawUrl = urlInput.getText().toString().trim();
+                    if (rawUrl.isEmpty()) {
+                        // 地址不能为空，重新弹
+                        askForServerUrlThenCredentials(prefs);
+                        return;
+                    }
+                    String normalized = buildAppUrl(rawUrl);
                     prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
-                    webView.loadUrl(normalized);
+                    // 继续弹第二个框
+                    askForCredentials(prefs, normalized);
                 })
                 .show();
     }
 
-    /** 弹窗让用户重置服务器地址（用于 Web 端调用或长按入口） */
-    private void showResetServerUrlDialog() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        final EditText input = new EditText(this);
-        input.setHint("例如 http://your-server.com:8880");
-        String current = prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL);
-        input.setText(current);
-        input.setSingleLine(true);
-        input.setSelectAllOnFocus(true);
+    /** 弹窗②：输入用户名 + 密码 */
+    private void askForCredentials(final SharedPreferences prefs, final String normalizedUrl) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        container.setPadding(pad, pad / 2, pad, 0);
+
+        final EditText usernameInput = new EditText(this);
+        usernameInput.setHint("用户名");
+        usernameInput.setSingleLine(true);
+        container.addView(usernameInput);
+
+        final EditText passwordInput = new EditText(this);
+        passwordInput.setHint("密码");
+        passwordInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        passwordInput.setSingleLine(true);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        passwordInput.setLayoutParams(p);
+        container.addView(passwordInput);
 
         new AlertDialog.Builder(this)
-                .setTitle("修改服务器地址")
-                .setView(input)
+                .setTitle("② 输入账号密码")
+                .setMessage("用于自动登录")
+                .setView(container)
+                .setCancelable(false)
+                .setPositiveButton("确定", (dialog, which) -> {
+                    String u = usernameInput.getText().toString().trim();
+                    String pw = passwordInput.getText().toString();
+                    if (!u.isEmpty()) prefs.edit().putString(KEY_USERNAME, u).apply();
+                    if (!pw.isEmpty()) prefs.edit().putString(KEY_PASSWORD, pw).apply();
+                    loginAutoSubmitted = false;
+                    webView.loadUrl(normalizedUrl);
+                })
+                .setNegativeButton("跳过", (dialog, which) -> {
+                    // 不存账号密码，直接进入，之后在 Web 登录页手动填
+                    webView.loadUrl(normalizedUrl);
+                })
+                .show();
+    }
+
+    /** 重置弹窗：修改服务器地址 + 账号密码 */
+    private void showResetSettingsDialog() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        container.setPadding(pad, pad / 2, pad, 0);
+
+        final EditText urlInput = new EditText(this);
+        urlInput.setHint("服务器地址");
+        urlInput.setText(prefs.getString(KEY_SERVER_URL, ""));
+        urlInput.setSingleLine(true);
+        container.addView(urlInput);
+
+        final EditText userInput = new EditText(this);
+        userInput.setHint("用户名（可留空）");
+        userInput.setText(prefs.getString(KEY_USERNAME, ""));
+        userInput.setSingleLine(true);
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p2.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        userInput.setLayoutParams(p2);
+        container.addView(userInput);
+
+        final EditText passInput = new EditText(this);
+        passInput.setHint("密码（可留空）");
+        passInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        passInput.setText(prefs.getString(KEY_PASSWORD, ""));
+        passInput.setSingleLine(true);
+        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p3.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        passInput.setLayoutParams(p3);
+        container.addView(passInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("修改服务器和账号")
+                .setView(container)
                 .setPositiveButton("保存", (dialog, which) -> {
-                    String raw = input.getText().toString().trim();
-                    String normalized = buildAppUrl(raw);
-                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
-                    webView.loadUrl(normalized);
+                    String url = buildAppUrl(urlInput.getText().toString().trim());
+                    String u = userInput.getText().toString().trim();
+                    String pw = passInput.getText().toString();
+                    prefs.edit()
+                            .putString(KEY_SERVER_URL, url)
+                            .putString(KEY_USERNAME, u)
+                            .putString(KEY_PASSWORD, pw)
+                            .apply();
+                    loginAutoSubmitted = false;
+                    webView.loadUrl(url);
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    @SuppressWarnings("unused")
+    private void showResetServerUrlDialog() {
+        showResetSettingsDialog();
     }
 
     private static String buildAppUrl(String baseUrl) {
@@ -282,6 +389,45 @@ public class MainActivity extends Activity {
         if (!url.startsWith("http://") && !url.startsWith("https://")) url = "http://" + url;
         while (url.endsWith("/")) url = url.substring(0, url.length() - 1);
         return url; // 手机版走首页 /
+    }
+
+    /**
+     * WebView 加载到登录页时自动注入 JS 填表单并提交。
+     * React 受控组件不能直接 .value = 'xxx'，必须绕过 native setter 再触发 input 事件。
+     */
+    private void autoFillLoginForm() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        final String username = prefs.getString(KEY_USERNAME, null);
+        final String password = prefs.getString(KEY_PASSWORD, null);
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+            return; // 没存账号密码，让用户手动填
+        }
+        loginAutoSubmitted = true;
+
+        // 转义 JS 字符串里的特殊字符
+        String jsUser = username.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"");
+        String jsPass = password.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"");
+
+        String js = "(function(){"
+                + "var u=document.getElementById('username');"
+                + "var p=document.getElementById('password');"
+                + "if(!u||!p) return;"
+                + "var setter=Object.getOwnPropertyDescriptor("
+                + "window.HTMLInputElement.prototype,'value').set;"
+                + "setter.call(u,'" + jsUser + "');"
+                + "u.dispatchEvent(new Event('input',{bubbles:true}));"
+                + "setter.call(p,'" + jsPass + "');"
+                + "p.dispatchEvent(new Event('input',{bubbles:true}));"
+                + "var r=document.getElementById('remember-password');"
+                + "if(r&&!r.checked) r.click();"
+                + "var btn=document.querySelector('button[type=\"submit\"]')"
+                + "||document.querySelector('button');"
+                + "if(btn){btn.click();}"
+                + "})();";
+
+        if (webView != null) {
+            webView.evaluateJavascript(js, null);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
