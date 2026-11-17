@@ -253,14 +253,38 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // 页面加载完后验证 AndroidBridge 注入成功
+
+                // ✅ 注入 CSS：干掉那排第三方应用工具栏（播放页播放器下方那排蓝色按钮）
+                // 用 XPath 找包含"下载视频"或"第三方应用打开按钮"注释的 div，加 display:none
+                String hideToolbar =
+                    "(function() {" +
+                    "  // 找播放器下方的工具栏容器" +
+                    "  const all = document.querySelectorAll('div[class*=\"mt-3\"]');" +
+                    "  all.forEach(d => {" +
+                    "    // 检查里面有没有包含下载按钮的特征" +
+                    "    if (d.querySelector('[title=\"下载视频\"]') || d.querySelector('[title^=\"App打开\"]') || d.querySelector('[title^=\"复制\"]')) {" +
+                    "      d.style.display = 'none !important';" +
+                    "      d.style.visibility = 'hidden !important';" +
+                    "      android.util.Log.d('MoonTV', '隐藏了工具栏: ' + d.className);" +
+                    "    }" +
+                    "  });" +
+                    "  // 也找带 mt-3 且直接包含 button 子元素的" +
+                    "  document.querySelectorAll('div.mt-3 button[title]').forEach(b => {" +
+                    "    const parent = b.closest('div.mt-3');" +
+                    "    if (parent && !parent.querySelector('[title*=\"选集\"]')) {" +
+                    "      parent.style.display = 'none !important';" +
+                    "    }" +
+                    "  });" +
+                    "  return 'hidden';" +
+                    "})()";
+
+                view.evaluateJavascript(hideToolbar, v ->
+                        android.util.Log.d("MoonTV", "CSS hide result: " + v));
+
+                // 同时验证 Bridge
                 view.evaluateJavascript(
                         "typeof window.AndroidBridge === 'object' ? 'OK' : 'FAIL'",
-                        value -> {
-                            android.util.Log.d("MoonTV", "Bridge injection: " + value
-                                    + " at url=" + url);
-                        }
-                );
+                        value -> android.util.Log.d("MoonTV", "Bridge: " + value));
             }
 
             @Override
