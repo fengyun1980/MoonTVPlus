@@ -254,34 +254,48 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // ✅ 注入 CSS：干掉那排第三方应用工具栏（播放页播放器下方那排蓝色按钮）
-                // 用 XPath 找包含"下载视频"或"第三方应用打开按钮"注释的 div，加 display:none
+                // ✅ 用 MutationObserver 持续监听 DOM 变化
+                // Next.js 是客户端渲染，工具栏在 onPageFinished 之后才被 React 挂载
                 String hideToolbar =
                     "(function() {" +
-                    "  // 找播放器下方的工具栏容器" +
-                    "  const all = document.querySelectorAll('div[class*=\"mt-3\"]');" +
-                    "  all.forEach(d => {" +
-                    "    // 检查里面有没有包含下载按钮的特征" +
-                    "    if (d.querySelector('[title=\"下载视频\"]') || d.querySelector('[title^=\"App打开\"]') || d.querySelector('[title^=\"复制\"]')) {" +
-                    "      d.style.display = 'none !important';" +
-                    "      d.style.visibility = 'hidden !important';" +
-                    "      android.util.Log.d('MoonTV', '隐藏了工具栏: ' + d.className);" +
-                    "    }" +
-                    "  });" +
-                    "  // 也找带 mt-3 且直接包含 button 子元素的" +
-                    "  document.querySelectorAll('div.mt-3 button[title]').forEach(b => {" +
-                    "    const parent = b.closest('div.mt-3');" +
-                    "    if (parent && !parent.querySelector('[title*=\"选集\"]')) {" +
-                    "      parent.style.display = 'none !important';" +
-                    "    }" +
-                    "  });" +
-                    "  return 'hidden';" +
-                    "})()";
+                    "  function hideNow() {" +
+                    "    var found = false;" +
+                    "    document.querySelectorAll('div[class*=\"mt-3\"]').forEach(function(d) {" +
+                    "      var btns = d.querySelectorAll('button[title]');" +
+                    "      if (btns.length >= 3) {" +  // 一排至少 3 个按钮才是我们要隐藏的
+                    "        var hasBad = false;" +
+                    "        btns.forEach(function(b) {" +
+                    "          var t = (b.getAttribute('title') || '');" +
+                    "          if (t.indexOf('下载') >= 0 || t.indexOf('App打开') >= 0 ||" +
+                    "              t.indexOf('复制') >= 0 || t.indexOf('PotPlayer') >= 0 ||" +
+                    "              t.indexOf('PC Client') >= 0 || t.indexOf('观影室') >= 0) {" +
+                    "            hasBad = true;" +
+                    "          }" +
+                    "        });" +
+                    "        if (hasBad) {" +
+                    "          d.style.setProperty('display', 'none', 'important');" +
+                    "          d.style.setProperty('height', '0', 'important');" +
+                    "          d.style.setProperty('overflow', 'hidden', 'important');" +
+                    "          found = true;" +
+                    "        }" +
+                    "      }" +
+                    "    });" +
+                    "    return found;" +
+                    "  }" +
+                    "  hideNow();" +  // 立即执行一次
+                    "  " +
+                    "  // 持续监听（每 500ms 重试，最多 20 秒）" +
+                    "  var attempts = 0;" +
+                    "  var timer = setInterval(function() {" +
+                    "    attempts++;" +
+                    "    if (hideNow() || attempts > 40) clearInterval(timer);" +
+                    "  }, 500);" +
+                    "})();";
 
                 view.evaluateJavascript(hideToolbar, v ->
-                        android.util.Log.d("MoonTV", "CSS hide result: " + v));
+                        android.util.Log.d("MoonTV", "Hide toolbar result: " + v));
 
-                // 同时验证 Bridge
+                // 验证 Bridge 注入
                 view.evaluateJavascript(
                         "typeof window.AndroidBridge === 'object' ? 'OK' : 'FAIL'",
                         value -> android.util.Log.d("MoonTV", "Bridge: " + value));
