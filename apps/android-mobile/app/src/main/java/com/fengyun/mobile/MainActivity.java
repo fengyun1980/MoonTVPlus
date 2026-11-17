@@ -860,9 +860,9 @@ public class MainActivity extends Activity {
     private void loadSavedUrl() {
         SharedPreferences sp = getSharedPreferences("moontv_config", MODE_PRIVATE);
         baseUrl = sp.getString("server_url", null);
-        if (baseUrl == null || baseUrl.isEmpty()) {
-            baseUrl = BuildConfig.BASE_URL;
-        }
+        // 首次打开没有保存过地址 → 留 null，loadUrl() 里会强制弹对话框
+        // 不再 fallback 到 BuildConfig.BASE_URL（那是占位 IP，用户根本连不上）
+        Log.d(TAG, "loadSavedUrl: " + (baseUrl != null ? baseUrl : "(未设置)"));
     }
 
     private void saveUrl(String url) {
@@ -873,9 +873,18 @@ public class MainActivity extends Activity {
     }
 
     private void loadUrl() {
-        if (baseUrl == null || baseUrl.isEmpty() || baseUrl.contains("your-server")) {
+        // 判定无效地址：null / 空 / 含 your-server / 占位 IP（192.168.1.10）
+        boolean invalid = baseUrl == null
+            || baseUrl.isEmpty()
+            || baseUrl.contains("your-server")
+            || baseUrl.contains("192.168.1.10")
+            || baseUrl.contains("localhost")
+            || baseUrl.contains("0.0.0.0");
+        if (invalid) {
+            Log.d(TAG, "URL 无效，弹对话框让用户输入");
             showUrlDialog();
         } else {
+            Log.i(TAG, "加载地址: " + baseUrl);
             webView.loadUrl(baseUrl);
         }
     }
@@ -1023,6 +1032,28 @@ public class MainActivity extends Activity {
                     // 1.5 秒后再扫一次（React/Next.js 客户端渲染）
                     mainHandler.postDelayed(MainActivity.this::captureVideoFromWebView, 1500);
                 }, 800);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                // 只对主页面加载错误弹对话框（子资源如图片/JS 失败不弹）
+                if (request.isForMainFrame()) {
+                    String desc = error.getDescription() != null ? error.getDescription().toString() : "未知错误";
+                    Log.e(TAG, "❌ WebView 主页面加载失败: " + desc);
+                    Toast.makeText(MainActivity.this, "加载失败: " + desc, Toast.LENGTH_LONG).show();
+                    // 延迟一下再弹，避免页面还没渲染完
+                    mainHandler.postDelayed(MainActivity.this::showUrlDialog, 800);
+                }
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                // 证书错误也弹对话框
+                Log.e(TAG, "❌ SSL 错误: " + error.getUrl());
+                handler.cancel();
+                Toast.makeText(MainActivity.this, "SSL 证书错误，请检查地址", Toast.LENGTH_LONG).show();
+                mainHandler.postDelayed(MainActivity.this::showUrlDialog, 800);
             }
         });
 
