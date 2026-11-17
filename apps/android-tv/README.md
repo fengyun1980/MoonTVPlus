@@ -4,7 +4,7 @@
 
 ## 构建参数
 
-- `BASE_URL`: 服务端 Base URL，不需要带 `/tv`，例如 `https://example.com` 或 `http://192.168.1.10:3000`
+- `BASE_URL`: 服务端 Base URL，不需要带 `/tv`，例如 `https://example.com` 或 `http://m.tmnas.top:8880`
 - `APP_NAME`: Android TV 桌面显示名称
 - `VERSION_NAME`: APK 版本名
 - `VERSION_CODE`: APK 版本号，整数
@@ -33,6 +33,6 @@ BASE_URL 去掉末尾 / 后 + /tv
 ## 本地构建
 
 ```bash
-gradle assembleWebviewDebug -PBASE_URL="http://192.168.1.10:3000"
-gradle assembleGeckoDebug -PBASE_URL="http://192.168.1.10:3000"
+gradle assembleWebviewDebug -PBASE_URL="http://m.tmnas.top:8880"
+gradle assembleGeckoDebug -PBASE_URL="http://m.tmnas.top:8880"
 ```

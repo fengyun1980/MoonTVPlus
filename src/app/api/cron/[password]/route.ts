@@ -575,7 +575,7 @@ async function refreshRecordAndFavorites() {
               console.log(`已为用户 ${user} 创建收藏更新通知: ${fav.title}`);
 
               // 收集更新信息用于邮件
-              const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+              const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://m.tmnas.top:8880';
               const playUrl = `${siteUrl}/play?source=${source}&id=${id}&title=${encodeURIComponent(fav.title)}`;
               userUpdates.push({
                 title: fav.title,
@@ -609,7 +609,7 @@ async function refreshRecordAndFavorites() {
                 const emailConfig = config?.EmailConfig;
 
                 if (emailConfig?.enabled) {
-                  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+                  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://m.tmnas.top:8880';
                   const siteName = config?.SiteConfig?.SiteName || 'MoonTVPlus';
 
                   await EmailService.send(emailConfig, {
@@ -729,7 +729,7 @@ async function refreshRecordAndFavorites() {
                 previousChapterCount,
                 latestChapterCount,
                 latestChapterName,
-                url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/manga/detail?mangaId=${encodeURIComponent(item.mangaId)}&sourceId=${encodeURIComponent(item.sourceId)}&title=${encodeURIComponent(item.title)}&cover=${encodeURIComponent(detail.shelfItem.cover || item.cover || '')}&sourceName=${encodeURIComponent(item.sourceName)}`,
+                url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://m.tmnas.top:8880'}/manga/detail?mangaId=${encodeURIComponent(item.mangaId)}&sourceId=${encodeURIComponent(item.sourceId)}&title=${encodeURIComponent(item.title)}&cover=${encodeURIComponent(detail.shelfItem.cover || item.cover || '')}&sourceName=${encodeURIComponent(item.sourceName)}`,
                 cover: inlineCover,
               });
             }
@@ -756,7 +756,7 @@ async function refreshRecordAndFavorites() {
                 const emailConfig = config?.EmailConfig;
 
                 if (emailConfig?.enabled) {
-                  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+                  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://m.tmnas.top:8880';
                   const siteName = config?.SiteConfig?.SiteName || 'MoonTVPlus';
 
                   await EmailService.send(emailConfig, {

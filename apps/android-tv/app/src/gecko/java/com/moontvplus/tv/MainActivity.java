@@ -133,7 +133,7 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
     private static String buildTvUrl(String baseUrl) {
         String url = baseUrl == null ? "" : baseUrl.trim();
         if (url.isEmpty()) {
-            url = "http://192.168.1.10:3000";
+            url = "http://m.tmnas.top:8880";
         }
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             url = "http://" + url;
