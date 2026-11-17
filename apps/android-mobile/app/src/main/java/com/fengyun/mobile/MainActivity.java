@@ -843,7 +843,6 @@ public class MainActivity extends Activity {
 
     /**
      * 进入 PiP（画中画）模式
-     * 简化版：尽量让它先工作起来
      */
     private void enterPictureInPictureModeSafe() {
         if (!supportsPip() || isInPipMode) return;
@@ -851,23 +850,28 @@ public class MainActivity extends Activity {
         try {
             android.util.Log.i("MoonTV", "enterPictureInPictureModeSafe: 开始");
 
-            PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-                    .setAspectRatio(new android.util.Rational(16, 9));
+            // ✅ 提前设标记！否则 onPause 会在回调前被调用，暂停 WebView 导致黑屏
+            isInPipMode = true;
 
-            PictureInPictureParams params = builder.build();
+            PictureInPictureParams params = new PictureInPictureParams.Builder()
+                    .setAspectRatio(new android.util.Rational(16, 9))
+                    .build();
 
-            // 关键方法
             boolean success = enterPictureInPictureMode(params);
 
             android.util.Log.i("MoonTV", "enterPictureInPictureMode 返回: " + success);
-            // 注意：onPictureInPictureModeChanged 会异步回调确认是否真的进入
+
+            // 如果系统拒绝了（某些国产 ROM 限制），回退标记
+            if (!success) {
+                isInPipMode = false;
+                android.util.Log.w("MoonTV", "⚠️ 系统拒绝了 PiP，回退");
+            }
 
         } catch (IllegalStateException e) {
-            // 可能原因：Activity 不在前台、没有 MediaSession、系统禁止等
+            isInPipMode = false;
             android.util.Log.e("MoonTV", "PiP IllegalStateException: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            android.util.Log.e("MoonTV", "PiP IllegalArgumentException: " + e.getMessage());
         } catch (Exception e) {
+            isInPipMode = false;
             android.util.Log.e("MoonTV", "PiP Exception: " + e.getMessage());
         }
     }
@@ -1031,21 +1035,41 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (webView != null) webView.onResume();
+        if (webView != null) {
+            webView.onResume();
+            webView.resumeTimers();
+        }
+        // 从 PiP/悬浮窗回来：恢复 video 播放
+        if (isInPipMode || isInFloatingWindow) {
+            webView.evaluateJavascript(
+                "(function() {" +
+                "  var v = document.querySelector('video');" +
+                "  if (v && v.paused) v.play().catch(function(){});" +
+                "})();", null);
+        }
         if (playbackService != null) playbackService.notifyActivityResumed();
     }
 
     @Override
     protected void onPause() {
-        if (webView != null) webView.onPause();
+        // ✅ PiP 模式下不要暂停 WebView！这是黑屏的根因！
+        // onPause 会暂停 WebView 的渲染管线，包括 video 帧
+        if (!isInPipMode && !isInFloatingWindow && webView != null) {
+            webView.onPause();
+        }
         super.onPause();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        // 注意：不要在这里自动暂停视频！
-        // 用户按 Home 进入 PiP 时会触发 onStop，我们希望视频继续播放
+        // PiP/悬浮窗期间不要停止 WebView 渲染
+        if (!isInPipMode && !isInFloatingWindow) {
+            // 非 PiP 模式：可以安全暂停
+            if (webView != null) {
+                webView.onPause();
+            }
+        }
     }
 
     @Override
