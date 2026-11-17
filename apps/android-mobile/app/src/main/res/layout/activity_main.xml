@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    全屏 WebView 容器
-    注意：不要在 WebView 上手动设 layerType，默认硬件加速就好，
-    手动 setLayerType(null) 反而会导致 AndroidBridge 注入失败 + video 渲染问题
+    三层结构：
+    Layer 1 (底层): WebView —— 加载 Next.js 页面（封面/列表/UI）
+    Layer 2 (中层): fullscreen_container —— WebChromeClient customView 全屏容器
+    Layer 3 (顶层): exo_player_view —— ExoPlayer 原生播放器覆盖层（PiP/悬浮窗可靠来源）
+    
+    ExoPlayer PlayerView 的好处：
+    - 原生 Surface 渲染，Activity PiP 不黑屏
+    - 可以直接加到 WindowManager 做悬浮窗
+    - 跟 MediaSession 天然联动（超级岛）
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root_container"
@@ -11,17 +17,31 @@
     android:background="#000000"
     android:fitsSystemWindows="false">
 
+    <!-- Layer 1: WebView —— 加载所有 UI -->
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- 全屏视频时承载 customView 的容器（与 root_container 同一层级） -->
+    <!-- Layer 2: WebChromeClient 全屏容器 -->
     <FrameLayout
         android:id="@+id/fullscreen_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#000000"
         android:visibility="gone" />
+
+    <!-- Layer 3: ExoPlayer PlayerView 覆盖层 —— 原生视频渲染 -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/exo_player_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone"
+        android:keepScreenOn="true"
+        app:resize_mode="fit"
+        app:use_controller="true"
+        app:controller_layout_id="@layout/exo_player_controller"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
 
 </FrameLayout>

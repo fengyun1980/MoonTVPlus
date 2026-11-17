@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    ExoPlayer 自定义控制器
+    只有核心功能：播放/暂停、进度条、返回、全屏
+    （PiP 里也能用的简易控制器）
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="#80000000">
+
+    <!-- 进度条 -->
+    <androidx.media3.ui.DefaultTimeBar
+        android:id="@+id/exo_time_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <!-- 控制按钮行 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="4dp">
+
+        <androidx.media3.ui.PlaybackControlView
+            android:id="@+id/exo_playback_controls"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_weight="1" />
+
+    </LinearLayout>
+
+</LinearLayout>

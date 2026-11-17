@@ -79,4 +79,10 @@ dependencies {
     // AndroidX 媒体会话（MediaSession + MediaStyle 自动上岛）
     implementation("androidx.media:media:1.8.0")
     implementation("androidx.core:core:1.13.1")
+
+    // ✅ ExoPlayer —— 原生视频播放器（PiP 100% 不黑屏方案）
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+    implementation("androidx.media3:media3-session:1.5.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.5.1")
 }
