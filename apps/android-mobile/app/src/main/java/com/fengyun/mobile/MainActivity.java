@@ -237,6 +237,10 @@ public class MainActivity extends Activity {
         // JS Bridge —— 在 setJavaScriptEnabled(true) 之后注入
         webView.addJavascriptInterface(new MobileJsBridge(), "AndroidBridge");
 
+        // ✅ 开启 WebView 远程调试（你可以用 Chrome://inspect 看真实 DOM）
+        WebView.setWebContentsDebuggingEnabled(true);
+        android.util.Log.i("MoonTV", "✅ WebView 调试已开启，在电脑 Chrome 访问 chrome://inspect 看 DOM");
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
