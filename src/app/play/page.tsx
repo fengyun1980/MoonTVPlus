@@ -8995,6 +8995,16 @@ function PlayPageClient() {
             const episodeStr = currentEpisodeIndexRef.current != null
               ? `第${currentEpisodeIndexRef.current + 1}集`
               : '';
+
+            // ✅ 最关键：主动把视频 URL 传给原生，让 ExoPlayer 立刻接管
+            // 优先用 ArtPlayer 原始 URL（非 blob 的 m3u8 更好）
+            const fyRawUrl = artPlayerRef.current.options?.url || '';
+            const fyActualUrl = fyVideo.currentSrc || fyVideo.src || fyRawUrl;
+            if (fyActualUrl) {
+              console.debug('[FengYunBridge] 📥 推送视频 URL → 原生 ExoPlayer:', fyActualUrl.substring(0, 60));
+              fengyunBridge.onVideoUrl(fyActualUrl);
+            }
+
             fengyunBridge.onPlayStart(videoTitleRef.current || '正在播放', coverUrl, episodeStr);
 
             // 播放状态事件
@@ -9015,11 +9025,17 @@ function PlayPageClient() {
             };
             fyVideo.addEventListener('timeupdate', fyOnTimeUpdate);
 
-            // 切集时重新上报标题（监听 ArtPlayer 换源事件）
+            // 切集时重新上报 URL + 标题（监听 ArtPlayer 换源事件）
             const fyOnEpisodeChange = () => {
               const epStr = currentEpisodeIndexRef.current != null
                 ? `第${currentEpisodeIndexRef.current + 1}集`
                 : '';
+              const epRawUrl = artPlayerRef.current.options?.url || '';
+              const epActualUrl = fyVideo.currentSrc || fyVideo.src || epRawUrl;
+              if (epActualUrl) {
+                console.debug('[FengYunBridge] 📥 换集推送 URL → 原生:', epActualUrl.substring(0, 60));
+                fengyunBridge.onVideoUrl(epActualUrl);
+              }
               fengyunBridge.onPlayStart(videoTitleRef.current || '正在播放', coverUrl, epStr);
             };
             artPlayerRef.current.on('url', fyOnEpisodeChange);

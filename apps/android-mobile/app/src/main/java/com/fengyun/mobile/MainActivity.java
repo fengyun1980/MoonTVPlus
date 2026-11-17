@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.util.DisplayMetrics;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
@@ -162,7 +163,10 @@ public class MainActivity extends Activity {
             webView.resumeTimers();
         }
 
-        VideoPlaybackService.resumePlaybackService(this);
+        // 恢复播放服务通知
+        if (exoPlayer != null && exoPlayerActive) {
+            startOrUpdatePlaybackService();
+        }
     }
 
     @Override
@@ -176,7 +180,7 @@ public class MainActivity extends Activity {
 
         // 如果有原生播放器在播，让 VideoPlaybackService 接管（上岛）
         if (exoPlayer != null && exoPlayerActive && !isInPipMode) {
-            VideoPlaybackService.pausePlaybackService(this);
+            pausePlaybackService();
         }
     }
 
@@ -212,7 +216,7 @@ public class MainActivity extends Activity {
             webView.destroy();
             webView = null;
         }
-        VideoPlaybackService.stopPlaybackService(this);
+        stopPlaybackService();
         removeFloatingWindow();
     }
 
@@ -284,28 +288,86 @@ public class MainActivity extends Activity {
     private void captureVideoFromWebView() {
         if (webView == null || exoPlayerActive) return;
 
-        // 注入 JS 找 video.src（支持 src 属性和 source 子元素）
+        // 更全面的 JS 扫描——多种可能的 URL 来源
         String js =
             "(function() {" +
+            "  var results = [];" +
             "  var v = document.querySelector('video');" +
-            "  if (!v) return 'no-video';" +
-            "  if (v.src && v.src.length > 0) return v.src;" +
+            "  if (!v) return JSON.stringify({ok:false, reason:'no-video'});" +
+            "  // 1. video.currentSrc（最可靠，反映实际加载的 URL）" +
+            "  if (v.currentSrc && v.currentSrc.length > 0) results.push({src:'currentSrc', url:v.currentSrc});" +
+            "  // 2. video.src" +
+            "  if (v.src && v.src.length > 0 && v.src !== v.currentSrc) results.push({src:'src', url:v.src});" +
+            "  // 3. source 子元素" +
             "  var source = v.querySelector('source');" +
-            "  if (source && source.src) return source.src;" +
-            "  return 'no-src';" +
+            "  if (source && source.src) results.push({src:'source', url:source.src});" +
+            "  // 4. data-src 属性（某些懒加载播放器）" +
+            "  if (v.dataset.src) results.push({src:'data-src', url:v.dataset.src});" +
+            "  // 5. ArtPlayer 实例上的 url 属性" +
+            "  var artPlayer = window.artplayer || window.Artplayer || window.__artplayer__;" +
+            "  if (artPlayer && artPlayer.options && artPlayer.options.url) results.push({src:'artplayer', url:artPlayer.options.url});" +
+            "  // 优先选非 blob 的真实 URL（HLS.js 的 m3u8 URL 比 blob: 更好）" +
+            "  for (var i = 0; i < results.length; i++) {" +
+            "    if (!results[i].url.startsWith('blob:')) {" +
+            "      return JSON.stringify({ok:true, url:results[i].url, source:results[i].src, playing:!v.paused && !v.ended});" +
+            "    }" +
+            "  }" +
+            "  // 没有非 blob 的，用第一个" +
+            "  if (results.length > 0) {" +
+            "    return JSON.stringify({ok:true, url:results[0].url, source:results[0].src, playing:!v.paused && !v.ended});" +
+            "  }" +
+            "  return JSON.stringify({ok:false, reason:'no-src', playing:!v.paused && !v.ended});" +
             "})();";
 
         webView.evaluateJavascript(js, result -> {
-            if (result == null || result.startsWith("no-") || result.startsWith("null")) {
-                Log.d(TAG, "没找到 video src: " + result);
+            if (result == null) {
+                Log.w(TAG, "captureVideoFromWebView: JS 返回 null");
+                return;
+            }
+            Log.d(TAG, "captureVideoFromWebView raw result: " + result);
+
+            // 去掉 JS 字符串的引号
+            String json = result.replace("\"", "").trim();
+
+            // 简单解析——找 url: 和 reason:
+            if (!json.contains("ok:true")) {
+                String reason = "unknown";
+                int ri = json.indexOf("reason:");
+                if (ri >= 0) {
+                    reason = json.substring(ri + 7);
+                    int comma = reason.indexOf(",");
+                    if (comma > 0) reason = reason.substring(0, comma);
+                }
+                Log.w(TAG, "❌ WebView video 扫描失败: " + reason);
                 return;
             }
 
-            // URL 是 JS 字符串格式，去掉引号
-            String videoUrl = result.replace("\"", "").trim();
-            Log.i(TAG, "✅ 提取到 video URL: " + videoUrl);
+            // 找 url: 值
+            int ui = json.indexOf("url:");
+            if (ui < 0) {
+                Log.w(TAG, "❌ 没找到 url 字段");
+                return;
+            }
+            // url:xxx,source:xxx 或 url:xxx}
+            String afterUrl = json.substring(ui + 4);
+            int commaOrBrace = afterUrl.indexOf(',');
+            if (commaOrBrace < 0) commaOrBrace = afterUrl.indexOf('}');
+            if (commaOrBrace < 0) commaOrBrace = afterUrl.length();
+            String videoUrl = afterUrl.substring(0, commaOrBrace).trim();
 
-            // ✅ 让 ExoPlayer 接管
+            if (videoUrl.isEmpty() || videoUrl.equals("null")) {
+                Log.w(TAG, "❌ URL 为空");
+                return;
+            }
+
+            Log.i(TAG, "✅ 提取到 video URL [" + videoUrl.substring(0, Math.min(30, videoUrl.length())) + "...]");
+
+            // 如果已经在播同一个 URL，跳过
+            if (exoPlayer != null && exoPlayerActive) {
+                Log.d(TAG, "ExoPlayer 已激活，跳过 captureVideoFromWebView");
+                return;
+            }
+
             playVideoWithExoPlayer(videoUrl);
         });
     }
@@ -344,7 +406,7 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 隐藏 WebView 里的原始 video（用 CSS visibility，不销毁，保持资源释放）
+     * 隐藏 WebView 里的原始 video 并暂停它（防止双份解码浪费资源）
      */
     private void hideWebViewVideo() {
         if (webView == null) return;
@@ -352,14 +414,25 @@ public class MainActivity extends Activity {
             "(function() {" +
             "  var v = document.querySelector('video');" +
             "  if (v) {" +
+            "    try { v.pause(); } catch(e) {}" +
+            "    try { v.currentTime = 0; } catch(e) {}" +
             "    v.style.opacity = '0';" +
             "    v.style.pointerEvents = 'none';" +
+            "    v.style.position = 'absolute';" +
+            "    v.style.zIndex = '-9999';" +
             "  }" +
-            // 隐藏 ArtPlayer 容器
+            // 隐藏 ArtPlayer 容器（但不销毁，保持 JS 状态）
             "  var artContainer = document.querySelector('.artplayer');" +
-            "  if (artContainer) artContainer.style.opacity = '0';" +
+            "  if (artContainer) {" +
+            "    artContainer.style.opacity = '0';" +
+            "    artContainer.style.pointerEvents = 'none';" +
+            "  }" +
+            // 隐藏播放器控制栏
+            "  var controls = document.querySelector('.artplayer .artplayer-controls');" +
+            "  if (controls) controls.style.display = 'none';" +
             "})();";
         webView.evaluateJavascript(js, null);
+        Log.i(TAG, "✅ WebView video 已暂停 + 隐藏");
     }
 
     /**
@@ -675,12 +748,18 @@ public class MainActivity extends Activity {
                 am.getAppTasks().get(0).moveToFront();
             } catch (Exception ignored) {}
         } else {
-            moveTaskToFront(getTaskId(), false);
+            // 旧版本用 Home Intent 回到前台
+            try {
+                Intent home = new Intent(Intent.ACTION_MAIN);
+                home.addCategory(Intent.CATEGORY_HOME);
+                home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(home);
+            } catch (Exception ignored) {}
         }
     }
 
     @Override
-    protected void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
         this.isInPipMode = isInPictureInPictureMode;
         Log.i(TAG, "PiP 模式变化: " + isInPictureInPictureMode);
@@ -1029,11 +1108,35 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** ✅ 前端主动把视频 URL 传给原生（最可靠的兜底方式） */
+        @JavascriptInterface
+        public void onVideoUrl(final String url) {
+            runOnUiThread(() -> {
+                Log.i(TAG, "📥 前端主动推送视频 URL: " + url);
+                if (url != null && url.length() > 0
+                    && !url.startsWith("no-") && !url.startsWith("null")
+                    && !exoPlayerActive) {
+                    playVideoWithExoPlayer(url);
+                } else if (exoPlayerActive) {
+                    // 已在播，忽略（避免重复接管）
+                    Log.d(TAG, "ExoPlayer 已激活，忽略 onVideoUrl");
+                }
+            });
+        }
+
+        /** ✅ 原生主动询问前端当前视频 URL（用于悬浮窗/PiP 兜底场景） */
+        @JavascriptInterface
+        public void requestVideoUrl() {
+            runOnUiThread(() -> {
+                captureVideoFromWebView();
+            });
+        }
+
         // ✅ 播放状态回调
         @JavascriptInterface
         public void onPlayStart(String title, String coverUrl, String episode) {
             runOnUiThread(() -> {
-                // 扫描 video → ExoPlayer 接管
+                // 先扫一下 video → ExoPlayer 接管
                 captureVideoFromWebView();
                 // 同时启动上岛服务
                 startOrUpdatePlaybackService();

@@ -20,6 +20,8 @@ type AndroidBridge = {
   onPlayResume?: () => void;
   onPlayEnd?: () => void;
   onPlayProgress?: (positionSec: number, durationSec: number) => void;
+  onVideoUrl?: (url: string) => void;
+  requestVideoUrl?: () => void;
   isInPip?: () => boolean;
 };
 
@@ -64,6 +66,25 @@ export const fengyunBridge = {
     const bridge = getBridge();
     if (!bridge?.onPlayEnd) return;
     try { bridge.onPlayEnd(); } catch (e) { /* noop */ }
+  },
+
+  /**
+   * 主动把视频 URL 传给原生（最可靠的方式，原生 ExoPlayer 直接接管）
+   * 在 Android APP 里，这个应该在 ArtPlayer 初始化/换集后立即调用
+   */
+  onVideoUrl(url: string) {
+    const bridge = getBridge();
+    if (!bridge?.onVideoUrl) return;
+    try { bridge.onVideoUrl(url || ''); } catch (e) { /* noop */ }
+  },
+
+  /**
+   * 原生请求前端提供当前视频 URL（用于悬浮窗/PiP 兜底）
+   */
+  requestVideoUrl() {
+    const bridge = getBridge();
+    if (!bridge?.requestVideoUrl) return;
+    try { bridge.requestVideoUrl(); } catch (e) { /* noop */ }
   },
 
   /**
