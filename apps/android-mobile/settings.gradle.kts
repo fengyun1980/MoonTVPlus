@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MoonTVPlusMobile"
+rootProject.name = "FengYunYingShi"
 include(":app")

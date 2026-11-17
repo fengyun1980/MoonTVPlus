@@ -39,7 +39,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 /**
- * MoonTVPlus 手机版主 Activity
+ * 风云影视 手机版主 Activity
  * <p>
  * 核心能力：
  * 1. WebView 壳 —— 加载服务端页面，硬件加速
@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
-        s.setUserAgentString(s.getUserAgentString() + " MoonTVPlusMobile WebView");
+        s.setUserAgentString(s.getUserAgentString() + " FengYunMobile WebView");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override

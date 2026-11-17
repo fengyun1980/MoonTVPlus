@@ -51,7 +51,7 @@ public class VideoPlaybackService extends Service {
     static final String EXTRA_TITLE = "extra_title";
     static final String EXTRA_COVER_URL = "extra_cover_url";
 
-    private static final String CHANNEL_ID = "moontv_playback_channel";
+    private static final String CHANNEL_ID = "fengyun_playback_channel";
     private static final int NOTIFICATION_ID = 1001;
 
     private final IBinder binder = new LocalBinder();
@@ -165,7 +165,7 @@ public class VideoPlaybackService extends Service {
     // ──────────────────────────────────────────────────────────────
 
     private void setupMediaSession() {
-        mediaSession = new MediaSessionCompat(this, "MoonTVPlusPlayback");
+        mediaSession = new MediaSessionCompat(this, "FengYunPlayback");
 
         mediaSession.setCallback(new MediaSessionCompat.Callback() {
             @Override
@@ -237,7 +237,7 @@ public class VideoPlaybackService extends Service {
         MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "MoonTVPlus");
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "风云影视");
 
         if (cover != null) {
             builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, cover);
@@ -381,7 +381,7 @@ public class VideoPlaybackService extends Service {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(currentTitle)
-                .setContentText("MoonTVPlus — 正在观看")
+                .setContentText("风云影视 — 正在观看")
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentIntent(contentPi)
                 .setOngoing(true) // 持续通知（播放中不能被划掉）
@@ -457,7 +457,7 @@ public class VideoPlaybackService extends Service {
                 "          \"picInfo\": { \"type\": 1, \"pic\": \"miui.focus.pic_cover\" },\n" +
                 "          \"textInfo\": {\n" +
                 "            \"title\": \"" + escapeJson(title) + "\",\n" +
-                "            \"content\": \"MoonTVPlus\"\n" +
+                "            \"content\": \"风云影视\"\n" +
                 "          }\n" +
                 "        }\n" +
                 "      },\n" +
@@ -523,7 +523,7 @@ public class VideoPlaybackService extends Service {
         // Activity 绑定了服务，直接回调
         // 但更稳健的做法是用 LocalBroadcastManager + JS Bridge 轮询
         // 这里留一个 hook 点
-        android.util.Log.d("MoonTVPlus", "Service → JS event: " + event);
+        android.util.Log.d("FengYun", "Service → JS event: " + event);
         // 实际项目中用 EventBus 或 LocalBroadcastManager 发送
     }
 }
