@@ -1,14 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    全屏 WebView 容器
+    注意：不要在 WebView 上手动设 layerType，默认硬件加速就好，
+    手动 setLayerType(null) 反而会导致 AndroidBridge 注入失败 + video 渲染问题
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/black">
+    android:background="#000000"
+    android:fitsSystemWindows="false">
 
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 全屏视频时承载 customView 的容器（与 root_container 同一层级） -->
+    <FrameLayout
+        android:id="@+id/fullscreen_container"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layerType="hardware" />
+        android:background="#000000"
+        android:visibility="gone" />
 
 </FrameLayout>

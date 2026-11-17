@@ -56,6 +56,7 @@ public class MainActivity extends Activity {
     private static final String KEY_BASE_URL = "base_url";
 
     private FrameLayout rootContainer;
+    private FrameLayout fullscreenContainer;
     private WebView webView;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
@@ -98,6 +99,7 @@ public class MainActivity extends Activity {
 
         setContentView(R.layout.activity_main);
         rootContainer = findViewById(R.id.root_container);
+        fullscreenContainer = findViewById(R.id.fullscreen_container);
         webView = findViewById(R.id.webview);
 
         setupImmersive();
@@ -276,37 +278,117 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            // ─── 全屏视频处理（3 参数版本，Android 2.1+）────
+            @Override
+            public void onShowCustomView(View view, int requestedOrientation, CustomViewCallback callback) {
+                android.util.Log.i("MoonTV", "onShowCustomView (3-param) orient=" + requestedOrientation);
+                enterFullscreenVideo(view, callback);
+            }
+
+            // ─── 全屏视频处理（2 参数版本，旧版 fallback）────
             @Override
             public void onShowCustomView(View view, CustomViewCallback callback) {
-                // 全屏视频（HTML5 video 进入全屏）
-                if (customView != null) {
-                    callback.onCustomViewHidden();
-                    return;
-                }
-                customView = view;
-                customViewCallback = callback;
-                webView.setVisibility(View.GONE);
-                rootContainer.addView(customView, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                ));
+                android.util.Log.i("MoonTV", "onShowCustomView (2-param)");
+                enterFullscreenVideo(view, callback);
             }
 
             @Override
             public void onHideCustomView() {
-                hideCustomView();
+                android.util.Log.i("MoonTV", "onHideCustomView");
+                exitFullscreenVideo();
             }
         });
+
+        // WebChromeClient 全屏视频的核心实现（抽出来避免两个版本重复）
     }
 
-    private void hideCustomView() {
+    /**
+     * 进入全屏视频 —— 隐藏所有系统栏，视频占满整个屏幕
+     */
+    private void enterFullscreenVideo(View videoView, WebChromeClient.CustomViewCallback callback) {
+        if (customView != null) {
+            callback.onCustomViewHidden();
+            return;
+        }
+        customView = videoView;
+        customViewCallback = callback;
+
+        // 隐藏 WebView
+        webView.setVisibility(View.GONE);
+
+        // 把 video view 加到全屏容器
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        fullscreenContainer.addView(videoView, lp);
+        fullscreenContainer.setVisibility(View.VISIBLE);
+
+        // 强制全屏 —— 隐藏状态栏、导航栏，延伸到刘海/挖孔屏区域
+        Window window = getWindow();
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+
+            window.setDecorFitsSystemWindows(false);
+        }
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+
+        android.util.Log.i("MoonTV", "✅ 视频已进入全屏");
+    }
+
+    /**
+     * 退出全屏视频 —— 恢复系统 UI
+     */
+    private void exitFullscreenVideo() {
         if (customView == null) return;
-        rootContainer.removeView(customView);
+
+        Window window = getWindow();
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false); // 保持沉浸式
+        }
+        setupImmersive(); // 恢复普通沉浸式（不是全屏视频那种）
+
+        fullscreenContainer.removeView(customView);
+        fullscreenContainer.setVisibility(View.GONE);
         customView = null;
+
         webView.setVisibility(View.VISIBLE);
+        webView.requestFocus();
+
         if (customViewCallback != null) {
             customViewCallback.onCustomViewHidden();
             customViewCallback = null;
+        }
+        android.util.Log.i("MoonTV", "✅ 已退出全屏");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Activity 生命周期（全屏视频时处理配置变更）
+    // ──────────────────────────────────────────────────────────────
+
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // 如果在全屏视频中，重新应用全屏 flag（某些机型旋转后会丢失）
+        if (customView != null) {
+            Window window = getWindow();
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            window.getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
     }
 
@@ -540,7 +622,7 @@ public class MainActivity extends Activity {
         }
         // 2. 全屏视频
         if (customView != null) {
-            hideCustomView();
+            exitFullscreenVideo();
             return;
         }
         // 3. WebView 历史栈
