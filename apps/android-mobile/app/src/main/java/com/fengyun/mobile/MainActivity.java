@@ -648,131 +648,171 @@ public class MainActivity extends Activity {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 悬浮窗（PiP 降级方案，更可靠）
+    // 悬浮窗（PiP 降级，真正的播放器小窗）
     // ──────────────────────────────────────────────────────────────
 
     private boolean isInFloatingWindow = false;
     private android.view.WindowManager floatingWindowManager;
-    private android.view.View floatingWindowView;
+    private android.view.WindowManager.LayoutParams floatingLayoutParams;
 
     /**
-     * 尝试进入悬浮窗（需要 SYSTEM_ALERT_WINDOW 权限）
+     * 尝试进入悬浮窗 —— 把全屏视频容器移到系统悬浮窗
      */
     private void tryEnterFloatingWindow() {
-        if (isInFloatingWindow) return;
+        if (isInFloatingWindow) {
+            exitFloatingWindow();
+            return;
+        }
 
-        // Android 6.0+ 需要用户手动授权悬浮窗权限
+        // Android 6.0+ 悬浮窗权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                 && !android.provider.Settings.canDrawOverlays(this)) {
-            android.util.Log.i("MoonTV", "⚠️ 需要悬浮窗权限，跳转设置...");
+            android.util.Log.i("MoonTV", "⚠️ 跳转悬浮窗权限设置...");
             android.content.Intent intent = new android.content.Intent(
                 android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 android.net.Uri.parse("package:" + getPackageName()));
             startActivity(intent);
+            android.widget.Toast.makeText(this, "请开启「显示在其他应用上层」权限",
+                android.widget.Toast.LENGTH_LONG).show();
             return;
         }
 
-        try {
-            // 如果视频是全屏的（在 fullscreenContainer 里），把全屏 view 移到悬浮窗
-            View videoView = customView;
-            if (videoView == null && customView == null) {
-                // 不是全屏，先触发全屏，再移到悬浮窗
-                android.util.Log.i("MoonTV", "视频不是全屏，先进入全屏再悬浮");
-                webView.evaluateJavascript(
-                    "(function() {" +
-                    "  var v = document.querySelector('video');" +
-                    "  if (v && typeof v.requestFullscreen === 'function') v.requestFullscreen();" +
-                    "  else if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen();" +
-                    "})();", null);
-                // 延迟一点等 onShowCustomView 回调
-                mainHandler.postDelayed(() -> tryEnterFloatingWindow(), 500);
-                return;
-            }
-
-            // 创建悬浮窗
-            floatingWindowManager = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
-            int layoutFlag = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                    ? android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    : android.view.WindowManager.LayoutParams.TYPE_PHONE;
-
-            // 悬浮窗大小：宽度 = 屏幕宽度 * 0.6，高度按 16:9
-            android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
-            floatingWindowManager.getDefaultDisplay().getMetrics(dm);
-            int windowW = (int) (dm.widthPixels * 0.65);
-            int windowH = windowW * 9 / 16;
-
-            android.view.WindowManager.LayoutParams params = new android.view.WindowManager.LayoutParams(
-                windowW, windowH,
-                layoutFlag,
-                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                android.graphics.PixelFormat.TRANSLUCENT);
-            params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
-            params.x = dm.widthPixels - windowW - 30;
-            params.y = 100;
-
-            // 先进入全屏拿到 videoView
-            if (customView == null) {
-                mainHandler.postDelayed(() -> {
-                    if (customView != null) moveCustomViewToFloating(params);
-                }, 800);
-                return;
-            }
-
-            moveCustomViewToFloating(params);
-
-        } catch (Exception e) {
-            android.util.Log.e("MoonTV", "❌ 悬浮窗创建失败: " + e.getMessage());
+        // 如果视频还没进全屏，先触发全屏
+        if (customView == null) {
+            android.util.Log.i("MoonTV", "视频未全屏，先触发全屏...");
+            webView.evaluateJavascript(
+                "(function() {" +
+                "  var v = document.querySelector('video');" +
+                "  if (v) {" +
+                "    try { v.requestFullscreen(); } catch(e) {}" +
+                "    try { v.webkitEnterFullscreen && v.webkitEnterFullscreen(); } catch(e) {}" +
+                "  }" +
+                "})();", null);
+            mainHandler.postDelayed(() -> {
+                if (customView != null) {
+                    android.util.Log.i("MoonTV", "✅ customView 已拿到，创建悬浮窗");
+                    createFloatingWindow();
+                } else {
+                    android.util.Log.w("MoonTV", "⚠️ 等了 1.2s 还是没拿到 customView，放弃悬浮窗");
+                }
+            }, 1200);
+            return;
         }
+
+        // 已经是全屏 → 直接创建悬浮窗
+        createFloatingWindow();
     }
 
-    private void moveCustomViewToFloating(android.view.WindowManager.LayoutParams params) {
+    private void createFloatingWindow() {
+        if (customView == null) return;
+
         try {
-            // 从全屏容器移出 videoView
+            floatingWindowManager = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+
+            // 窗口类型
+            int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : android.view.WindowManager.LayoutParams.TYPE_PHONE;
+
+            // 悬浮窗尺寸：屏幕宽 65%，高按视频比例
+            android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
+            floatingWindowManager.getDefaultDisplay().getMetrics(dm);
+            int winW = (int) (dm.widthPixels * 0.65f);
+            int winH = winW * 9 / 16;
+
+            floatingLayoutParams = new android.view.WindowManager.LayoutParams(
+                winW, winH, type,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT);
+            floatingLayoutParams.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
+            floatingLayoutParams.x = 30;  // 右边距
+            floatingLayoutParams.y = 150; // 顶部距
+
+            // 1. 先从 fullscreenContainer 拿出 customView
             fullscreenContainer.removeView(customView);
-            // 设置为悬浮窗 LayoutParams
-            customView.setLayoutParams(params);
-            floatingWindowManager.addView(customView, params);
 
-            // 隐藏 WebView 容器
-            webView.setVisibility(View.GONE);
-            // 退出全屏状态
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+            // 2. 改 LayoutParams 适配悬浮窗
+            android.view.ViewGroup.LayoutParams lp = new android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+            customView.setLayoutParams(lp);
+
+            // 3. 加到悬浮窗
+            floatingWindowManager.addView(customView, floatingLayoutParams);
+
+            // 4. 隐藏全屏容器 + 保持 WebView 可见（悬浮窗不影响它）
             fullscreenContainer.setVisibility(View.GONE);
+            webView.setVisibility(View.VISIBLE);
+            rootContainer.setPadding(0, 0, 0, 0); // 悬浮窗不需要状态栏 padding
 
-            // 开启前台服务（上岛）
+            // 5. 启动上岛服务
             startOrUpdatePlaybackService();
 
             isInFloatingWindow = true;
-            android.util.Log.i("MoonTV", "✅ 悬浮窗已创建");
+            android.util.Log.i("MoonTV", "✅ 悬浮窗创建成功！尺寸=" + winW + "x" + winH);
 
-            // 拖动支持
-            setupFloatingDrag(params);
+            // 6. 支持拖动 + 点击关闭
+            setupFloatingControls();
 
         } catch (Exception e) {
-            android.util.Log.e("MoonTV", "❌ moveCustomViewToFloating 失败: " + e.getMessage());
+            android.util.Log.e("MoonTV", "❌ 悬浮窗创建失败: " + e.getMessage(), e);
         }
     }
 
-    private void setupFloatingDrag(android.view.WindowManager.LayoutParams params) {
+    private void setupFloatingControls() {
         if (customView == null) return;
-        final int[] initialTouchX = new int[1];
-        final int[] initialTouchY = new int[1];
-        final int[] initialX = new int[1];
-        final int[] initialY = new int[1];
+
+        // 拖动
+        final int[] startX = new int[1], startY = new int[1];
+        final int[] winX = new int[1], winY = new int[1];
+        final long[] lastTapTime = new long[1];
+        final float[] lastTapX = new float[1], lastTapY = new float[1];
 
         customView.setOnTouchListener((v, event) -> {
+            if (floatingLayoutParams == null) return false;
+
             switch (event.getAction()) {
                 case android.view.MotionEvent.ACTION_DOWN:
-                    initialX[0] = params.x;
-                    initialY[0] = params.y;
-                    initialTouchX[0] = (int) event.getRawX();
-                    initialTouchY[0] = (int) event.getRawY();
+                    startX[0] = (int) event.getRawX();
+                    startY[0] = (int) event.getRawY();
+                    winX[0] = floatingLayoutParams.x;
+                    winY[0] = floatingLayoutParams.y;
                     return false;
+
                 case android.view.MotionEvent.ACTION_MOVE:
-                    params.x = initialX[0] + ((int) event.getRawX() - initialTouchX[0]);
-                    params.y = initialY[0] + ((int) event.getRawY() - initialTouchY[0]);
-                    floatingWindowManager.updateViewLayout(customView, params);
-                    return true;
+                    int dx = (int) event.getRawX() - startX[0];
+                    int dy = (int) event.getRawY() - startY[0];
+                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                        if ((floatingLayoutParams.gravity & android.view.Gravity.END) != 0) {
+                            floatingLayoutParams.x = winX[0] - dx;
+                        } else {
+                            floatingLayoutParams.x = winX[0] + dx;
+                        }
+                        floatingLayoutParams.y = winY[0] + dy;
+                        try {
+                            floatingWindowManager.updateViewLayout(customView, floatingLayoutParams);
+                        } catch (Exception ignored) {}
+                        return true; // 拖动了就吃掉事件，不传给视频
+                    }
+                    return false;
+
+                case android.view.MotionEvent.ACTION_UP:
+                    // 快速点击 → 退出悬浮窗，回到全屏
+                    long now = System.currentTimeMillis();
+                    float ex = event.getRawX(), ey = event.getRawY();
+                    if (now - lastTapTime[0] < 300
+                        && Math.abs(ex - lastTapX[0]) < 30
+                        && Math.abs(ey - lastTapY[0]) < 30) {
+                        // 双击 → 退出悬浮窗
+                        exitFloatingWindow();
+                        return true;
+                    }
+                    lastTapTime[0] = now;
+                    lastTapX[0] = ex;
+                    lastTapY[0] = ey;
+                    return false;
             }
             return false;
         });
@@ -790,7 +830,9 @@ public class MainActivity extends Activity {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
             setupImmersive();
             isInFloatingWindow = false;
-            android.util.Log.i("MoonTV", "✅ 悬浮窗已关闭");
+            floatingWindowManager = null;
+            floatingLayoutParams = null;
+            android.util.Log.i("MoonTV", "✅ 悬浮窗已关闭，恢复全屏");
         } catch (Exception e) {
             android.util.Log.e("MoonTV", "exitFloatingWindow 失败: " + e.getMessage());
         }
