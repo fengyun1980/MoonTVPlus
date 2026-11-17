@@ -601,13 +601,40 @@ public class MainActivity extends Activity {
 
     /**
      * 用户按 Home / 最近任务键触发 —— 播放中自动进入 PiP
+     * ✅ 不依赖 JS Bridge！直接检测 WebView 里的 video
      */
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        if (supportsPip() && isPlaying && !isInPipMode) {
+        if (!supportsPip() || isInPipMode || webView == null) return;
+
+        if (isPlaying) {
+            android.util.Log.i("MoonTV", "onUserLeaveHint → PiP (via JS Bridge)");
             enterPictureInPictureModeSafe();
+            return;
         }
+
+        // ✅ 兜底：注入 JS 检测 video 是否在播放（不依赖前端 JS Bridge 接入）
+        webView.evaluateJavascript(
+            "(function() {" +
+            "  var videos = document.querySelectorAll('video');" +
+            "  for (var i = 0; i < videos.length; i++) {" +
+            "    if (!videos[i].paused && !videos[i].ended && videos[i].readyState > 2) {" +
+            "      return 'playing';" +
+            "    }" +
+            "  }" +
+            "  return 'not_playing';" +
+            "})();",
+            value -> {
+                android.util.Log.i("MoonTV", "PiP check video state: " + value);
+                if (value != null && value.contains("playing")) {
+                    android.util.Log.i("MoonTV", "✅ Video playing → entering PiP!");
+                    mainHandler.post(() -> enterPictureInPictureModeSafe());
+                } else {
+                    android.util.Log.i("MoonTV", "❌ No video playing, skip PiP");
+                }
+            }
+        );
     }
 
     /**
