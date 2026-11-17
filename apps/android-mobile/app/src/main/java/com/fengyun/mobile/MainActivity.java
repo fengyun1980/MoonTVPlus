@@ -653,24 +653,36 @@ public class MainActivity extends Activity {
     private void onPipModeChanged(boolean nowInPip) {
         isInPipMode = nowInPip;
 
-        // 告诉 WebView 当前状态，Web 端可以据此做 UI 调整
-        if (webView != null) {
-            String script = "window.dispatchEvent(new CustomEvent('moontv:pip-changed',{detail:{isInPip:"
-                    + (nowInPip ? "true" : "false") + "}}));";
-            webView.evaluateJavascript(script, null);
-        }
+        if (webView == null) return;
 
         if (nowInPip) {
-            // 进入 PiP：保持 WebView 继续播放
-            // WebView 不需要额外处理，进入 PiP 不会 destroy Activity
+            // 进入 PiP：告诉 Web 端
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('moontv:pip-changed',{detail:{isInPip:true}}));", null);
         } else {
-            // 退出 PiP：恢复全屏
+            // 退出 PiP：恢复播放
+            // Android O+ PiP 模式 WebView 里的 video 可能被暂停，需要重新 play
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('moontv:pip-changed',{detail:{isInPip:false}}));", null);
+
+            // ✅ 关键：尝试恢复播放中的 video
+            String resumeVideo =
+                "(function() {" +
+                "  var videos = document.querySelectorAll('video');" +
+                "  videos.forEach(function(v) {" +
+                "    if (v.paused) {" +
+                "      v.play().then(function() {" +
+                "        console.log('[MoonTV] ✅ Video resumed after PiP exit');" +
+                "      }).catch(function(e) {" +
+                "        console.log('[MoonTV] ⚠️ play() failed: ' + e.message);" +
+                "      });" +
+                "    }" +
+                "  });" +
+                "})();";
+            webView.evaluateJavascript(resumeVideo, null);
+
+            // 恢复沉浸式 padding
             setupImmersive();
-            // 通知 Web 端可以恢复大窗口 UI
-            if (webView != null) {
-                String script = "window.dispatchEvent(new CustomEvent('moontv:pip-exit',{}));";
-                webView.evaluateJavascript(script, null);
-            }
         }
     }
 
