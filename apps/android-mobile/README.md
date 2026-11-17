@@ -21,20 +21,33 @@
 | `VERSION_CODE` | `1` | 版本号（整数） |
 | `MIN_SDK` | `23` | 最低 Android API（Android 6.0+） |
 
+## 环境要求
+
+| 工具 | 最低版本 |
+|------|---------|
+| JDK | 17（AGP 8.x 强制要求） |
+| Android Studio | Hedgehog / Iguana / Jellyfish / Koala / Ladybug |
+| Android SDK | API 35（compileSdk） |
+| Gradle | 8.10.2（已内置 Wrapper） |
+
 ## 本地构建
 
 ```bash
 cd apps/android-mobile
 
-# Debug APK
-./gradlew assembleDebug -PBASE_URL="https://your-server.com"
+# Debug APK（直接运行）
+./gradlew assembleDebug -PBASE_URL="https://你的服务端.com"
 
 # Release APK（需要配置签名）
-./gradlew assembleRelease -PBASE_URL="https://your-server.com" \
+./gradlew assembleRelease -PBASE_URL="https://你的服务端.com" \
     -PANDROID_KEYSTORE_PATH=/path/to/keystore.jks \
     -PANDROID_KEYSTORE_PASSWORD=yourpass \
     -PANDROID_KEY_ALIAS=mykey \
     -PANDROID_KEY_PASSWORD=keypass
+
+# 或者参数写到 ~/.gradle/gradle.properties 里
+# org.gradle.project.BASE_URL=https://your-server.com
+# org.gradle.project.APP_NAME=风云影视
 ```
 
 构建产物：
@@ -43,6 +56,8 @@ cd apps/android-mobile
 app/build/outputs/apk/debug/app-debug.apk
 app/build/outputs/apk/release/app-release.apk
 ```
+
+首次构建会自动下载 Gradle 8.10.2 和 Android SDK，国内用户建议配好代理或 Android Studio 的 Gradle 镜像。
 
 ## 签名配置
 
