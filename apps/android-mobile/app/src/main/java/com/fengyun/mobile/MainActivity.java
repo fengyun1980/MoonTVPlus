@@ -3,12 +3,14 @@ package com.fengyun.mobile;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.app.PictureInPictureParams;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
@@ -32,6 +34,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
@@ -50,6 +53,10 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends Activity {
 
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
+    private static final String PREFS_NAME = "fengyun_mobile_prefs";
+    private static final String KEY_SERVER_URL = "server_url";
+    /** 默认服务器地址（兜底，弹窗为空时使用） */
+    private static final String DEFAULT_SERVER_URL = "http://m.tmnas.top:8880";
 
     private FrameLayout rootContainer;
     private WebView webView;
@@ -100,8 +107,14 @@ public class MainActivity extends Activity {
         requestNotificationPermissionIfNeeded();
         bindPlaybackService();
 
-        String url = buildAppUrl(BuildConfig.BASE_URL);
-        webView.loadUrl(url);
+        // 读已保存的服务器地址，没有则弹框让用户输入
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String savedUrl = prefs.getString(KEY_SERVER_URL, null);
+        if (savedUrl != null && !savedUrl.isEmpty()) {
+            webView.loadUrl(buildAppUrl(savedUrl));
+        } else {
+            askForServerUrl(prefs);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -218,9 +231,59 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 弹窗让用户输入服务器地址（首次启动或主动重置时调用） */
+    private void askForServerUrl(final SharedPreferences prefs) {
+        final EditText input = new EditText(this);
+        input.setHint("例如 http://your-server.com:8880");
+        input.setText(DEFAULT_SERVER_URL);
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+
+        new AlertDialog.Builder(this)
+                .setTitle("输入服务器地址")
+                .setMessage("首次使用需要填写你的服务端地址，格式如 http://your-server.com:8880")
+                .setView(input)
+                .setCancelable(false)
+                .setPositiveButton("确定", (dialog, which) -> {
+                    String raw = input.getText().toString().trim();
+                    String normalized = buildAppUrl(raw);
+                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
+                    webView.loadUrl(normalized);
+                })
+                .setNegativeButton("使用默认", (dialog, which) -> {
+                    String normalized = buildAppUrl(DEFAULT_SERVER_URL);
+                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
+                    webView.loadUrl(normalized);
+                })
+                .show();
+    }
+
+    /** 弹窗让用户重置服务器地址（用于 Web 端调用或长按入口） */
+    private void showResetServerUrlDialog() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        final EditText input = new EditText(this);
+        input.setHint("例如 http://your-server.com:8880");
+        String current = prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL);
+        input.setText(current);
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+
+        new AlertDialog.Builder(this)
+                .setTitle("修改服务器地址")
+                .setView(input)
+                .setPositiveButton("保存", (dialog, which) -> {
+                    String raw = input.getText().toString().trim();
+                    String normalized = buildAppUrl(raw);
+                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
+                    webView.loadUrl(normalized);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     private static String buildAppUrl(String baseUrl) {
         String url = baseUrl == null ? "" : baseUrl.trim();
-        if (url.isEmpty()) url = "http://m.tmnas.top:8880";
+        if (url.isEmpty()) url = DEFAULT_SERVER_URL;
         if (!url.startsWith("http://") && !url.startsWith("https://")) url = "http://" + url;
         while (url.endsWith("/")) url = url.substring(0, url.length() - 1);
         return url; // 手机版走首页 /

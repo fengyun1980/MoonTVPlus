@@ -1,6 +1,9 @@
 package com.moontvplus.tv;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -9,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 
 import org.json.JSONObject;
@@ -20,6 +24,9 @@ import java.net.URLEncoder;
 
 public class MainActivity extends Activity implements RemoteCommandHandler {
     private static GeckoRuntime runtime;
+    private static final String PREFS_NAME = "moontv_tv_prefs";
+    private static final String KEY_SERVER_URL = "server_url";
+    private static final String DEFAULT_SERVER_URL = "http://m.tmnas.top:8880";
 
     private GeckoSession session;
     private GeckoView geckoView;
@@ -64,7 +71,42 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
         session.open(runtime);
         geckoView.setSession(session);
         setupLocalRemoteServer();
-        session.loadUri(withLocalRemoteHash(buildTvUrl(BuildConfig.BASE_URL)));
+
+        // 读已保存的服务器地址，没有则弹框让用户输入
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String savedUrl = prefs.getString(KEY_SERVER_URL, null);
+        if (savedUrl != null && !savedUrl.isEmpty()) {
+            session.loadUri(withLocalRemoteHash(buildTvUrl(savedUrl)));
+        } else {
+            askForServerUrl(prefs);
+        }
+    }
+
+    /** 弹窗让用户输入服务器地址（首次启动时调用） */
+    private void askForServerUrl(final SharedPreferences prefs) {
+        final EditText input = new EditText(this);
+        input.setHint("例如 http://your-server.com:8880");
+        input.setText(DEFAULT_SERVER_URL);
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+
+        new AlertDialog.Builder(this)
+                .setTitle("输入服务器地址")
+                .setMessage("首次使用需要填写你的服务端地址")
+                .setView(input)
+                .setCancelable(false)
+                .setPositiveButton("确定", (dialog, which) -> {
+                    String raw = input.getText().toString().trim();
+                    String normalized = buildTvUrl(raw);
+                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
+                    session.loadUri(withLocalRemoteHash(normalized));
+                })
+                .setNegativeButton("使用默认", (dialog, which) -> {
+                    String normalized = buildTvUrl(DEFAULT_SERVER_URL);
+                    prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
+                    session.loadUri(withLocalRemoteHash(normalized));
+                })
+                .show();
     }
 
 
@@ -133,7 +175,7 @@ public class MainActivity extends Activity implements RemoteCommandHandler {
     private static String buildTvUrl(String baseUrl) {
         String url = baseUrl == null ? "" : baseUrl.trim();
         if (url.isEmpty()) {
-            url = "http://m.tmnas.top:8880";
+            url = DEFAULT_SERVER_URL;
         }
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             url = "http://" + url;
