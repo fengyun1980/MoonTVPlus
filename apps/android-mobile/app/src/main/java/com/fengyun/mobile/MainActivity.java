@@ -178,22 +178,17 @@ public class MainActivity extends Activity {
 
     private void setupImmersive() {
         Window window = getWindow();
-        // Android 11+ (API 30+) 用 setDecorFitsSystemWindows
+        // ✅ 正常浏览模式：内容可以画到状态栏后面，但状态栏/导航栏**保持可见**
+        // 只有全屏视频时才真正隐藏（在 enterFullscreenVideo 里处理）
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false);
-        } else {
-            // Android 10 及以下用旧 flag
-            @SuppressLint("InlinedApi")
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-            window.getDecorView().setSystemUiVisibility(flags);
         }
-        // 保持屏幕常亮（播放视频时）
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // 透明状态栏 + 透明导航栏（但按钮/图标还在）
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
     }
 
     @Override
@@ -258,63 +253,65 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // ✅ 扫描 DOM 结构（打印所有 div.mt-3 和它的子按钮 title）
-                String debugDOM =
+                // ✅ 方案 1：注入 <style> 标签（最简单，页面一加载就生效）
+                // 从源码已知工具栏里有 title='下载视频' 按钮
+                String injectStyle =
                     "(function() {" +
-                    "  var info = '=== DOM SCAN ===\\n';" +
-                    "  var allDivs = document.querySelectorAll('div[class*=\"mt-\"]');" +
-                    "  info += 'mt-* divs found: ' + allDivs.length + '\\n';" +
-                    "  allDivs.forEach(function(d, i) {" +
-                    "    var btns = d.querySelectorAll('button');" +
-                    "    var btnInfo = [];" +
-                    "    btns.forEach(function(b) {" +
-                    "      btnInfo.push('[' + (b.title || b.getAttribute('aria-label') || b.textContent?.substring(0,8) || '?') + ']');" +
-                    "    });" +
-                    "    info += 'div[' + i + '] class=' + d.className.substring(0,60) + ' btns=' + btnInfo.join(',') + '\\n';" +
-                    "  });" +
-                    "  console.log(info);" +
-                    "  " +
-                    "  // 扫描播放器容器下方所有直接子元素" +
-                    "  var art = document.querySelector('.art-container') || document.querySelector('.art');" +
-                    "  if (art && art.parentElement) {" +
-                    "    var sibs = art.parentElement.children;" +
-                    "    info = '=== SIBLINGS of art-container ===\\n';" +
-                    "    for (var i = 0; i < sibs.length; i++) {" +
-                    "      var s = sibs[i];" +
-                    "      var btnCount = s.querySelectorAll ? s.querySelectorAll('button').length : 0;" +
-                    "      info += 'sib[' + i + '] tag=' + s.tagName + ' class=' + (s.className || '').substring(0,50) + ' btns=' + btnCount + '\\n';" +
-                    "    }" +
-                    "    console.log(info);" +
-                    "  }" +
+                    "  var css = 'div[class*=\"mt-3\"] div[class*=\"bg-white\"] { display: none !important; }';" +
+                    "  try {" +
+                    "    // :has() 在 Android 13+ WebView 支持" +
+                    "    css = 'div:has(button[title=\"下载视频\"]) { display: none !important; height: 0 !important; overflow: hidden !important; }';" +
+                    "  } catch(e) {}" +
+                    "  var style = document.createElement('style');" +
+                    "  style.textContent = css;" +
+                    "  style.id = 'moontv-hide-toolbar';" +
+                    "  (document.head || document.documentElement).appendChild(style);" +
+                    "  console.log('[MoonTV] ✅ Style injected');" +
                     "})();";
 
-                // ✅ 每 1 秒扫一次，持续 10 秒
-                String periodicScan =
+                // ✅ 方案 2：MutationObserver（兜底，DOM 变化时再应用一次）
+                String injectObserver =
                     "(function() {" +
-                    "  var count = 0;" +
-                    "  var t = setInterval(function() {" +
-                    "    count++;" +
-                    "    console.log('[MoonTV scan #' + count + '] url=' + location.href);" +
-                    "    // 找任何带按钮的工具栏 div" +
-                    "    document.querySelectorAll('div').forEach(function(d) {" +
-                    "      var titles = [];" +
-                    "      d.querySelectorAll('button[title]').forEach(function(b) {" +
-                    "        titles.push(b.title);" +
-                    "      });" +
-                    "      if (titles.length >= 3 && d.className && d.className.indexOf('mt-') >= 0) {" +
-                    "        console.log('[FOUND toolbar] class=' + d.className + ' titles=' + titles.join('|'));" +
-                    "        // 干掉它！" +
-                    "        d.style.display = 'none';" +
-                    "        d.setAttribute('hidden', 'true');" +
-                    "        console.log('[HIDDEN] ✅');" +
+                    "  function hideToolbar() {" +
+                    "    var btns = document.querySelectorAll('button[title*=\"下载\"], button[title*=\"PotPlayer\"], button[title*=\"App打开\"], button[title*=\"PC Client\"]');" +
+                    "    btns.forEach(function(b) {" +
+                    "      // 向上找 3 层找到外层容器 div.mt-3" +
+                    "      var p = b.parentElement;" +
+                    "      for (var i = 0; i < 5 && p; i++) {" +
+                    "        if (p.className && typeof p.className === 'string' && p.className.indexOf('mt-3') >= 0) {" +
+                    "          p.style.setProperty('display', 'none', 'important');" +
+                    "          p.style.setProperty('height', '0', 'important');" +
+                    "          p.setAttribute('hidden', '');" +
+                    "          console.log('[MoonTV] ✅ Hidden toolbar container: ' + p.className);" +
+                    "          break;" +
+                    "        }" +
+                    "        p = p.parentElement;" +
                     "      }" +
                     "    });" +
-                    "    if (count >= 10) clearInterval(t);" +
-                    "  }, 1000);" +
+                    "    // 如果 :has 选择器没生效，手动隐藏 bg-white 那个 div" +
+                    "    document.querySelectorAll('div.mt-3').forEach(function(d) {" +
+                    "      if (d.querySelectorAll('div.bg-white, div.\\/50').length > 0 || d.children.length >= 1) {" +
+                    "        var inner = d.querySelector('div[class*=\"bg-white\"]') || d.querySelector('div[class*=\"\\/50\"]');" +
+                    "        if (inner && inner.querySelectorAll('button').length >= 3) {" +
+                    "          d.style.display = 'none';" +
+                    "          console.log('[MoonTV] ✅ Hidden via inner bg-white div');" +
+                    "        }" +
+                    "      }" +
+                    "    });" +
+                    "  }" +
+                    "  hideToolbar();" +
+                    "  // 持续监听 15 秒" +
+                    "  var tries = 0;" +
+                    "  var interval = setInterval(function() {" +
+                    "    tries++;" +
+                    "    hideToolbar();" +
+                    "    if (tries > 30) clearInterval(interval);" +
+                    "  }, 500);" +
+                    "  console.log('[MoonTV] ✅ Observer started, will hide toolbar for 15s');" +
                     "})();";
 
-                view.evaluateJavascript(debugDOM, null);
-                view.evaluateJavascript(periodicScan, null);
+                view.evaluateJavascript(injectStyle, null);
+                view.evaluateJavascript(injectObserver, null);
 
                 // 验证 Bridge 注入
                 view.evaluateJavascript(
