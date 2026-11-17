@@ -1067,18 +1067,17 @@ public class MainActivity extends Activity {
                     String desc = error.getDescription() != null ? error.getDescription().toString() : "未知错误";
                     Log.e(TAG, "❌ WebView 主页面加载失败: " + desc);
                     Toast.makeText(MainActivity.this, "加载失败: " + desc, Toast.LENGTH_LONG).show();
-                    // 延迟一下再弹，避免页面还没渲染完
-                    mainHandler.postDelayed(MainActivity.this::showUrlDialog, 800);
+                    // 预填原地址，用户点"确定"就是重试，改了就是换地址
+                    mainHandler.postDelayed(() -> showUrlDialog(baseUrl), 600);
                 }
             }
 
             @Override
             public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
-                // 证书错误也弹对话框
-                Log.e(TAG, "❌ SSL 错误: " + error.getUrl());
                 handler.cancel();
-                Toast.makeText(MainActivity.this, "SSL 证书错误，请检查地址", Toast.LENGTH_LONG).show();
-                mainHandler.postDelayed(MainActivity.this::showUrlDialog, 800);
+                Log.e(TAG, "❌ SSL 错误: " + error.getUrl());
+                Toast.makeText(MainActivity.this, "SSL 证书错误", Toast.LENGTH_LONG).show();
+                mainHandler.postDelayed(() -> showUrlDialog(baseUrl), 600);
             }
         });
 
