@@ -258,46 +258,63 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // ✅ 用 MutationObserver 持续监听 DOM 变化
-                // Next.js 是客户端渲染，工具栏在 onPageFinished 之后才被 React 挂载
-                String hideToolbar =
+                // ✅ 扫描 DOM 结构（打印所有 div.mt-3 和它的子按钮 title）
+                String debugDOM =
                     "(function() {" +
-                    "  function hideNow() {" +
-                    "    var found = false;" +
-                    "    document.querySelectorAll('div[class*=\"mt-3\"]').forEach(function(d) {" +
-                    "      var btns = d.querySelectorAll('button[title]');" +
-                    "      if (btns.length >= 3) {" +  // 一排至少 3 个按钮才是我们要隐藏的
-                    "        var hasBad = false;" +
-                    "        btns.forEach(function(b) {" +
-                    "          var t = (b.getAttribute('title') || '');" +
-                    "          if (t.indexOf('下载') >= 0 || t.indexOf('App打开') >= 0 ||" +
-                    "              t.indexOf('复制') >= 0 || t.indexOf('PotPlayer') >= 0 ||" +
-                    "              t.indexOf('PC Client') >= 0 || t.indexOf('观影室') >= 0) {" +
-                    "            hasBad = true;" +
-                    "          }" +
-                    "        });" +
-                    "        if (hasBad) {" +
-                    "          d.style.setProperty('display', 'none', 'important');" +
-                    "          d.style.setProperty('height', '0', 'important');" +
-                    "          d.style.setProperty('overflow', 'hidden', 'important');" +
-                    "          found = true;" +
-                    "        }" +
-                    "      }" +
+                    "  var info = '=== DOM SCAN ===\\n';" +
+                    "  var allDivs = document.querySelectorAll('div[class*=\"mt-\"]');" +
+                    "  info += 'mt-* divs found: ' + allDivs.length + '\\n';" +
+                    "  allDivs.forEach(function(d, i) {" +
+                    "    var btns = d.querySelectorAll('button');" +
+                    "    var btnInfo = [];" +
+                    "    btns.forEach(function(b) {" +
+                    "      btnInfo.push('[' + (b.title || b.getAttribute('aria-label') || b.textContent?.substring(0,8) || '?') + ']');" +
                     "    });" +
-                    "    return found;" +
-                    "  }" +
-                    "  hideNow();" +  // 立即执行一次
+                    "    info += 'div[' + i + '] class=' + d.className.substring(0,60) + ' btns=' + btnInfo.join(',') + '\\n';" +
+                    "  });" +
+                    "  console.log(info);" +
                     "  " +
-                    "  // 持续监听（每 500ms 重试，最多 20 秒）" +
-                    "  var attempts = 0;" +
-                    "  var timer = setInterval(function() {" +
-                    "    attempts++;" +
-                    "    if (hideNow() || attempts > 40) clearInterval(timer);" +
-                    "  }, 500);" +
+                    "  // 扫描播放器容器下方所有直接子元素" +
+                    "  var art = document.querySelector('.art-container') || document.querySelector('.art');" +
+                    "  if (art && art.parentElement) {" +
+                    "    var sibs = art.parentElement.children;" +
+                    "    info = '=== SIBLINGS of art-container ===\\n';" +
+                    "    for (var i = 0; i < sibs.length; i++) {" +
+                    "      var s = sibs[i];" +
+                    "      var btnCount = s.querySelectorAll ? s.querySelectorAll('button').length : 0;" +
+                    "      info += 'sib[' + i + '] tag=' + s.tagName + ' class=' + (s.className || '').substring(0,50) + ' btns=' + btnCount + '\\n';" +
+                    "    }" +
+                    "    console.log(info);" +
+                    "  }" +
                     "})();";
 
-                view.evaluateJavascript(hideToolbar, v ->
-                        android.util.Log.d("MoonTV", "Hide toolbar result: " + v));
+                // ✅ 每 1 秒扫一次，持续 10 秒
+                String periodicScan =
+                    "(function() {" +
+                    "  var count = 0;" +
+                    "  var t = setInterval(function() {" +
+                    "    count++;" +
+                    "    console.log('[MoonTV scan #' + count + '] url=' + location.href);" +
+                    "    // 找任何带按钮的工具栏 div" +
+                    "    document.querySelectorAll('div').forEach(function(d) {" +
+                    "      var titles = [];" +
+                    "      d.querySelectorAll('button[title]').forEach(function(b) {" +
+                    "        titles.push(b.title);" +
+                    "      });" +
+                    "      if (titles.length >= 3 && d.className && d.className.indexOf('mt-') >= 0) {" +
+                    "        console.log('[FOUND toolbar] class=' + d.className + ' titles=' + titles.join('|'));" +
+                    "        // 干掉它！" +
+                    "        d.style.display = 'none';" +
+                    "        d.setAttribute('hidden', 'true');" +
+                    "        console.log('[HIDDEN] ✅');" +
+                    "      }" +
+                    "    });" +
+                    "    if (count >= 10) clearInterval(t);" +
+                    "  }, 1000);" +
+                    "})();";
+
+                view.evaluateJavascript(debugDOM, null);
+                view.evaluateJavascript(periodicScan, null);
 
                 // 验证 Bridge 注入
                 view.evaluateJavascript(
@@ -321,7 +338,14 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
-            // ─── 全屏视频处理（3 参数版本，Android 2.1+）────
+            // ✅ console.log → Android logcat
+            @Override
+            public boolean onConsoleMessage(android.webkit.ConsoleMessage cm) {
+                android.util.Log.i("MoonTV.Web", "[" + cm.lineNumber() + "] " + cm.message());
+                return true;
+            }
+
+            // ─── 全屏视频处理（3 参数版本）────
             @Override
             public void onShowCustomView(View view, int requestedOrientation, CustomViewCallback callback) {
                 android.util.Log.i("MoonTV", "onShowCustomView (3-param) orient=" + requestedOrientation);
