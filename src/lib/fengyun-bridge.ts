@@ -88,8 +88,13 @@ export const fengyunBridge = {
     try { return !!bridge.isInPip(); } catch (e) { return false; }
   },
 
-  /** 当前是否运行在风云影视 Android 壳里 */
+  /** 当前是否运行在 MoonTV Android 壳里（双重检测：UA + Bridge 对象） */
   isInAndroidApp(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    // ✅ 主要判断：WebView 里设置了 "MoonTV Android" 后缀
+    if (ua.includes('MoonTV Android')) return true;
+    // fallback：Bridge 对象注入成功
     return getBridge() !== null;
   },
 };
