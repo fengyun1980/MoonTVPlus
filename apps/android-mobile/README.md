@@ -132,7 +132,7 @@ apps/android-mobile/
     ├── build.gradle.kts                     # AGP 8.7.3, compileSdk 35, Java 17
     └── src/main/
         ├── AndroidManifest.xml              # PiP + 前台服务 + 通知权限
-        ├── java/com/moontvplus/mobile/
+        ├── java/com/fengyun/mobile/
         │   ├── MainActivity.java            # WebView 壳 + PiP + JS Bridge
         │   ├── VideoPlaybackService.java    # MediaSession + MediaStyle 上岛核心
         │   └── IslandManager.java           # HyperOS 系统能力检测

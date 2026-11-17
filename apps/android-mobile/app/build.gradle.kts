@@ -26,11 +26,11 @@ fun escapeXmlString(value: String): String = value
     .replace("\"", "\\\"")
 
 android {
-    namespace = "com.moontvplus.mobile"
+    namespace = "com.fengyun.mobile"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.moontvplus.mobile"
+        applicationId = "com.fengyun.mobile"
         minSdk = minSdkValue
         targetSdk = 35
         versionCode = versionCodeValue

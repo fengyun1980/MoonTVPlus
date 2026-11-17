@@ -1,4 +1,4 @@
-package com.moontvplus.mobile;
+package com.fengyun.mobile;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -21,7 +21,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.media.session.MediaButtonReceiver;
 
-import com.moontvplus.mobile.IslandManager.HyperOSInfo;
+import com.fengyun.mobile.IslandManager.HyperOSInfo;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -42,11 +42,11 @@ import java.util.concurrent.Executors;
  */
 public class VideoPlaybackService extends Service {
 
-    static final String ACTION_START_PLAYBACK = "com.moontvplus.mobile.ACTION_START_PLAYBACK";
-    static final String ACTION_STOP_PLAYBACK = "com.moontvplus.mobile.ACTION_STOP_PLAYBACK";
-    static final String ACTION_TOGGLE_PLAY = "com.moontvplus.mobile.ACTION_TOGGLE_PLAY";
-    static final String ACTION_PREVIOUS = "com.moontvplus.mobile.ACTION_PREVIOUS";
-    static final String ACTION_NEXT = "com.moontvplus.mobile.ACTION_NEXT";
+    static final String ACTION_START_PLAYBACK = "com.fengyun.mobile.ACTION_START_PLAYBACK";
+    static final String ACTION_STOP_PLAYBACK = "com.fengyun.mobile.ACTION_STOP_PLAYBACK";
+    static final String ACTION_TOGGLE_PLAY = "com.fengyun.mobile.ACTION_TOGGLE_PLAY";
+    static final String ACTION_PREVIOUS = "com.fengyun.mobile.ACTION_PREVIOUS";
+    static final String ACTION_NEXT = "com.fengyun.mobile.ACTION_NEXT";
 
     static final String EXTRA_TITLE = "extra_title";
     static final String EXTRA_COVER_URL = "extra_cover_url";

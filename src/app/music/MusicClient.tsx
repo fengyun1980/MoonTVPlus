@@ -55,6 +55,7 @@ import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import { cn } from '@/lib/cn';
 import { getSourceDisplayLabel, normalizeSource, SourcePill } from '@/lib/music/shared';
 import type { MusicQuality, MusicSource, Song } from '@/lib/music/types';
+import { fengyunBridge } from '@/lib/fengyun-bridge';
 import type { MusicQueueItem, MusicSyncState } from '@/types/watch-room';
 
 const SPECTRUM_BIN_COUNT = 96;
@@ -1800,6 +1801,36 @@ export default function MusicClient({ children: _children }: { children?: React.
     audio.addEventListener('durationchange', handleDurationChange);
     audio.addEventListener('ended', handleEnded);
 
+    // ─── 风云影视 Android APP JS Bridge（超级岛上岛 + PiP）───
+    let fyOnPlay: (() => void) | null = null;
+    let fyOnPause: (() => void) | null = null;
+    let fyOnEndedBridge: (() => void) | null = null;
+    let fyLastProgressSent = 0;
+    let fyOnTimeUpdate: (() => void) | null = null;
+
+    if (fengyunBridge.isInAndroidApp()) {
+      const song = currentSongRef.current || currentSong;
+      const title = song?.title || song?.name || '正在播放';
+      const cover = (song as any)?.cover || (song as any)?.pic || (song as any)?.artwork || '';
+      fengyunBridge.onPlayStart(title, cover, '');
+
+      fyOnPlay = () => fengyunBridge.onPlayResume();
+      fyOnPause = () => fengyunBridge.onPlayPause();
+      fyOnEndedBridge = () => fengyunBridge.onPlayEnd();
+      fyOnTimeUpdate = () => {
+        const now = Date.now();
+        if (now - fyLastProgressSent < 1000) return;
+        fyLastProgressSent = now;
+        fengyunBridge.onPlayProgress(audio.currentTime, audio.duration);
+      };
+
+      audio.addEventListener('play', fyOnPlay);
+      audio.addEventListener('pause', fyOnPause);
+      audio.addEventListener('ended', fyOnEndedBridge);
+      audio.addEventListener('timeupdate', fyOnTimeUpdate);
+    }
+    // ──────────────────────────────────────────────────────────
+
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadstart', handleBufferingStart);
@@ -1813,6 +1844,11 @@ export default function MusicClient({ children: _children }: { children?: React.
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('durationchange', handleDurationChange);
       audio.removeEventListener('ended', handleEnded);
+      // 解绑风云 Bridge
+      if (fyOnPlay) audio.removeEventListener('play', fyOnPlay);
+      if (fyOnPause) audio.removeEventListener('pause', fyOnPause);
+      if (fyOnEndedBridge) audio.removeEventListener('ended', fyOnEndedBridge);
+      if (fyOnTimeUpdate) audio.removeEventListener('timeupdate', fyOnTimeUpdate);
     };
   }, [playMode, currentSongIndex, lyrics, currentSong, playlistIndex, playRecords, quality]);
 
