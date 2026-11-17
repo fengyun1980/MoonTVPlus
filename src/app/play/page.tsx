@@ -137,6 +137,8 @@ import VideoCard from '@/components/VideoCard';
 
 import { useDownload } from '@/contexts/DownloadContext';
 
+import { fengyunBridge } from '@/lib/fengyun-bridge';
+
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
   interface HTMLVideoElement {
@@ -8879,6 +8881,55 @@ function PlayPageClient() {
         // 监听播放器事件
         artPlayerRef.current.on('ready', async () => {
           setError(null);
+
+          // ─── 风云影视 Android APP JS Bridge 绑定（超级岛上岛 + PiP）───
+          if (fengyunBridge.isInAndroidApp() && artPlayerRef.current?.video) {
+            const fyVideo = artPlayerRef.current.video as HTMLVideoElement;
+            const coverUrl = videoCover || detailRef.current?.cover || '';
+            const episodeStr = currentEpisodeIndexRef.current != null
+              ? `第${currentEpisodeIndexRef.current + 1}集`
+              : '';
+            fengyunBridge.onPlayStart(videoTitleRef.current || '正在播放', coverUrl, episodeStr);
+
+            // 播放状态事件
+            const fyOnPlay = () => fengyunBridge.onPlayResume();
+            const fyOnPause = () => fengyunBridge.onPlayPause();
+            const fyOnEnded = () => fengyunBridge.onPlayEnd();
+            fyVideo.addEventListener('play', fyOnPlay);
+            fyVideo.addEventListener('pause', fyOnPause);
+            fyVideo.addEventListener('ended', fyOnEnded);
+
+            // 进度更新（节流：每秒最多一次）
+            let fyLastProgressSent = 0;
+            const fyOnTimeUpdate = () => {
+              const now = Date.now();
+              if (now - fyLastProgressSent < 1000) return;
+              fyLastProgressSent = now;
+              fengyunBridge.onPlayProgress(fyVideo.currentTime, fyVideo.duration);
+            };
+            fyVideo.addEventListener('timeupdate', fyOnTimeUpdate);
+
+            // 切集时重新上报标题（监听 ArtPlayer 换源事件）
+            const fyOnEpisodeChange = () => {
+              const epStr = currentEpisodeIndexRef.current != null
+                ? `第${currentEpisodeIndexRef.current + 1}集`
+                : '';
+              fengyunBridge.onPlayStart(videoTitleRef.current || '正在播放', coverUrl, epStr);
+            };
+            artPlayerRef.current.on('url', fyOnEpisodeChange);
+
+            // 清理：播放器销毁时解绑
+            artPlayerRef.current.on('destroy', () => {
+              fyVideo.removeEventListener('play', fyOnPlay);
+              fyVideo.removeEventListener('pause', fyOnPause);
+              fyVideo.removeEventListener('ended', fyOnEnded);
+              fyVideo.removeEventListener('timeupdate', fyOnTimeUpdate);
+              fengyunBridge.onPlayEnd();
+            });
+
+            console.debug('[FengYunBridge] 已绑定视频事件 → 原生超级岛');
+          }
+          // ──────────────────────────────────────────────────────────
 
           // 换集重建前处于网页全屏则恢复，避免用户换集时被踢出全屏
           if (restoreWebFullscreenOnReadyRef.current && artPlayerRef.current) {

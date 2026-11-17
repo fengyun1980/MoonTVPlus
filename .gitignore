@@ -75,3 +75,5 @@ scripts/test
 
 .agents/
 skills-lock.json
+fengyun-yingshi-debug.apk
+fengyun-release.keystore
