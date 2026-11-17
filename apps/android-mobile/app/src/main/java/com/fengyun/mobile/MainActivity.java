@@ -733,29 +733,74 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        // 1. 如果在 PiP 里，先退出 PiP
+        // 1. 如果在 PiP 里，按返回 → 直接 finish()，让 PiP 继续在后台（上岛/通知接管）
         if (isInPipMode && supportsPip()) {
-            try {
-                finish(); // 系统会自动从 PiP 恢复到全屏
-                return;
-            } catch (Exception ignored) {}
+            finish();
+            return;
         }
-        // 2. 全屏视频
+
+        // 2. 全屏视频 → 退出全屏（继续播放）
         if (customView != null) {
             exitFullscreenVideo();
+            // 退出全屏后如果还在播放，启动上岛服务
+            maybeStartIsland();
             return;
         }
-        // 3. WebView 历史栈
+
+        // 3. 视频正在播放 → 按返回直接上岛（PiP），不退出
+        //    先注入 JS 检测 video 状态（兜底）
+        if (supportsPip()) {
+            // 先看 JS Bridge 的 isPlaying
+            if (isPlaying) {
+                android.util.Log.i("MoonTV", "返回键：播放中 → 直接上岛（PiP）");
+                enterPictureInPictureModeSafe();
+                maybeStartIsland();
+                return;
+            }
+            // 兜底：检测 video 元素
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "(function() {" +
+                    "  var v = document.querySelector('video');" +
+                    "  return v && !v.paused && !v.ended && v.readyState > 2 ? 'yes' : 'no';" +
+                    "})();",
+                    val -> {
+                        if (val != null && val.contains("yes")) {
+                            android.util.Log.i("MoonTV", "返回键：video playing → 直接上岛（PiP）");
+                            mainHandler.post(() -> {
+                                enterPictureInPictureModeSafe();
+                                maybeStartIsland();
+                            });
+                        } else {
+                            // 没在播放 → 正常返回栈
+                            doNormalBack();
+                        }
+                    }
+                );
+                return; // 等 evaluateJavascript 回调
+            }
+        }
+
+        // 4. 最后兜底：WebView 历史栈 → 退出
+        doNormalBack();
+    }
+
+    /** 正常返回逻辑 */
+    private void doNormalBack() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
-            return;
+        } else {
+            super.onBackPressed();
         }
-        // 4. 播放中先进入 PiP 而不是退出
-        if (supportsPip() && isPlaying) {
-            enterPictureInPictureModeSafe();
-            return;
+    }
+
+    /** 启动/更新超级岛（MediaStyle 前台服务） */
+    private void maybeStartIsland() {
+        // 这个方法里已经在 JS Bridge onPlayStart 时调用过 startOrUpdatePlaybackService()
+        // 这里兜底：如果没启动，也尝试启动
+        if (playbackService == null) {
+            mainHandler.post(() -> startOrUpdatePlaybackService());
         }
-        super.onBackPressed();
     }
 
     // ──────────────────────────────────────────────────────────────
