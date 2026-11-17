@@ -233,10 +233,20 @@ public class MainActivity extends Activity {
         }
         s.setUserAgentString(s.getUserAgentString() + " MoonTV Android");
 
-        // WebView 默认已硬件加速，不要 setLayerType 覆盖它！
+        // WebView 默认已硬件加速
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
         webView.requestFocus();
+
+        // ✅ PiP/悬浮窗持续渲染关键配置
+        // 强制硬件加速层，不让 WebView 自动暂停渲染
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            webView.enableSlowWholeDocumentDraw();
+        }
+        // 始终保持 WebView 处于活跃状态（PiP 场景我们自己控制 onPause）
+        webView.onResume();
+        webView.resumeTimers();
 
         // JS Bridge —— 在 setJavaScriptEnabled(true) 之后注入
         webView.addJavascriptInterface(new MobileJsBridge(), "AndroidBridge");
