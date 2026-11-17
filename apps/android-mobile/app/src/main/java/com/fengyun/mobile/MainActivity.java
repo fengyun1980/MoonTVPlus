@@ -889,14 +889,21 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showUrlDialog() {
+    /** 弹服务器地址对话框，preFill 是预填的原地址（null 或空表示首次输入） */
+    private void showUrlDialog(String preFill, String extraMessage) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("🖥️ 服务器地址");
-        builder.setMessage("请输入 MoonTV 服务端地址\n（例如 http://192.168.1.10:3000）");
+        String msg = extraMessage != null ? extraMessage + "\n\n" : "";
+        msg += "请输入 MoonTV 服务端地址\n（例如 https://your-server.com）";
+        builder.setMessage(msg);
 
         final android.widget.EditText input = new android.widget.EditText(this);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         input.setHint("https://your-server.com");
+        if (preFill != null && !preFill.isEmpty()) {
+            input.setText(preFill);
+            input.setSelection(preFill.length());
+        }
         FrameLayout container = new FrameLayout(this);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -906,6 +913,9 @@ public class MainActivity extends Activity {
         builder.setView(container);
 
         builder.setPositiveButton("确定", null);
+        if (preFill != null && !preFill.isEmpty()) {
+            builder.setNegativeButton("取消", null);
+        }
 
         AlertDialog dialog = builder.create();
         dialog.setOnShowListener(d -> {
@@ -914,14 +924,29 @@ public class MainActivity extends Activity {
                 String url = input.getText().toString().trim();
                 if (url.isEmpty()) { Toast.makeText(this, "请输入地址", Toast.LENGTH_SHORT).show(); return; }
                 if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                    url = "http://" + url;
+                    url = "https://" + url;
                 }
                 saveUrl(url);
                 if (webView != null) webView.loadUrl(baseUrl);
                 dialog.dismiss();
             });
+            Button cancel = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            if (cancel != null) {
+                cancel.setOnClickListener(v -> dialog.dismiss());
+            }
         });
         dialog.show();
+    }
+
+    /** 默认重载：首次输入（无预填） */
+    private void showUrlDialog() {
+        showUrlDialog(null, null);
+    }
+
+    /** 带预填地址的重载（连接失败时让用户重试或改地址） */
+    private void showUrlDialog(String preFill) {
+        showUrlDialog(preFill, preFill != null && !preFill.isEmpty()
+            ? "连接失败，请检查地址是否正确" : null);
     }
 
     private void showLongPressSettingsDialog() {
