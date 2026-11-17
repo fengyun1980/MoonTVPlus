@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Rational;
 import android.view.KeyEvent;
 import android.view.View;
@@ -54,6 +55,7 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends Activity {
 
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
+    private static final int OVERLAY_PERMISSION_REQUEST = 1002;
     private static final String PREFS_NAME = "fengyun_mobile_prefs";
     private static final String KEY_SERVER_URL = "server_url";
     private static final String KEY_USERNAME = "username";
@@ -72,6 +74,7 @@ public class MainActivity extends Activity {
     private boolean isPlaying = false;
     private String currentTitle = "";
     private String currentCover = "";
+    private String currentPlayUrl = ""; // 当前播放页 URL（传给悬浮窗复用）
 
     private VideoPlaybackService playbackService;
     private boolean serviceBound = false;
@@ -111,6 +114,9 @@ public class MainActivity extends Activity {
         setupWebView();
         requestNotificationPermissionIfNeeded();
         bindPlaybackService();
+
+        // 检查悬浮窗权限（悬浮播放器需要）
+        requestOverlayPermissionIfNeeded();
 
         // 读已保存的服务器地址 + 账号密码
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -494,6 +500,39 @@ public class MainActivity extends Activity {
         public boolean isInPip() {
             return isInPipMode;
         }
+
+        /** 当前是否有悬浮播放器小窗在显示 */
+        @JavascriptInterface
+        public boolean isFloatingShown() {
+            return FloatingPlayerService.isShown();
+        }
+
+        /** Web 端主动请求进入悬浮窗模式（相当于按 Home 键） */
+        @JavascriptInterface
+        public void enterFloating() {
+            mainHandler.post(() -> {
+                if (webView == null) return;
+                String url = webView.getUrl();
+                if (url == null || !url.contains("/play")) return;
+
+                if (!FloatingPlayerService.canDrawOver(MainActivity.this)) {
+                    // 没权限，引导授权
+                    requestOverlayPermissionIfNeeded();
+                    return;
+                }
+                startFloatingPlayback(url);
+                // 悬浮窗启动后，结束 Activity 让它回到桌面
+                // （注意：onUserLeaveHint 可能还会触发，但悬浮窗已经在显示了，isShown 会拦住重复启动）
+            });
+        }
+
+        /** Web 端请求关闭悬浮窗（回到 APP） */
+        @JavascriptInterface
+        public void exitFloating() {
+            mainHandler.post(() -> {
+                if (FloatingPlayerService.isShown()) stopFloatingPlayback();
+            });
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -532,6 +571,74 @@ public class MainActivity extends Activity {
     }
 
     // ──────────────────────────────────────────────────────────────
+    // 悬浮播放器小窗（系统级）
+    // ──────────────────────────────────────────────────────────────
+
+    /** 启动悬浮播放器 —— 按 Home 切到后台时调用 */
+    private void startFloatingPlayback(String playUrl) {
+        if (!FloatingPlayerService.canDrawOver(this)) return;
+
+        currentPlayUrl = playUrl;
+
+        // 暂停主 WebView 里的视频（避免两个视频同时播）
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v&&!v.paused){v.pause();}})();", null);
+        }
+
+        // 启动悬浮服务
+        Intent intent = new Intent(this, FloatingPlayerService.class);
+        intent.setAction(FloatingPlayerService.ACTION_SHOW_FLOATING);
+        intent.putExtra(FloatingPlayerService.EXTRA_PLAY_URL, playUrl);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+
+        isPlaying = true;
+    }
+
+    /** 关闭悬浮播放器 —— 回到 APP 时调用 */
+    private void stopFloatingPlayback() {
+        Intent intent = new Intent(this, FloatingPlayerService.class);
+        intent.setAction(FloatingPlayerService.ACTION_HIDE_FLOATING);
+        startService(intent);
+
+        // 恢复主 WebView 视频
+        if (webView != null) {
+            mainHandler.postDelayed(() -> webView.evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v&&v.paused){v.play();}})();", null), 300);
+        }
+    }
+
+    /** 引导用户授予「显示在其他应用上层」权限（Android 6+） */
+    private void requestOverlayPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && !Settings.canDrawOverlays(this)) {
+            // 弹窗提示用户需要授权
+            new AlertDialog.Builder(this)
+                    .setTitle("需要悬浮窗权限")
+                    .setMessage("开启后，按 Home 键切到后台时视频会自动变成可拖动的悬浮小窗继续播放。\n\n是否去授权？")
+                    .setPositiveButton("去授权", (d, w) -> {
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName()));
+                        startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST);
+                    })
+                    .setNegativeButton("以后再说", null)
+                    .show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == OVERLAY_PERMISSION_REQUEST) {
+            // 用户从系统授权页回来了，权限是否授予下次启动时自然生效
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // PiP 画中画核心
     // ──────────────────────────────────────────────────────────────
 
@@ -548,7 +655,19 @@ public class MainActivity extends Activity {
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        if (supportsPip() && isPlaying && !isInPipMode) {
+        if (!isPlaying || isInPipMode) return;
+
+        // 优先：系统级悬浮播放器小窗
+        if (FloatingPlayerService.canDrawOver(this) && webView != null) {
+            String url = webView.getUrl();
+            if (url != null && url.contains("/play")) {
+                startFloatingPlayback(url);
+                return;
+            }
+        }
+
+        // 降级：Android 8+ PiP 画中画
+        if (supportsPip()) {
             enterPictureInPictureModeSafe();
         }
     }
@@ -678,6 +797,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        // 如果悬浮播放器小窗正在显示 → 关闭它（视频在主 APP 继续）
+        if (FloatingPlayerService.isShown()) {
+            stopFloatingPlayback();
+        }
+
         if (webView != null) webView.onResume();
         if (playbackService != null) playbackService.notifyActivityResumed();
     }
