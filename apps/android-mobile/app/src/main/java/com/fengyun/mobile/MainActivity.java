@@ -598,32 +598,35 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 用户按 Home / 最近任务键触发 —— 播放中自动进入 PiP（或悬浮窗降级）
+     * 用户按 Home / 最近任务键 —— 播放中自动进入 PiP（最原生最可靠）
+     * 悬浮窗作为 PiP 失败后的降级方案
      */
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
         if (isInPipMode || isInFloatingWindow || webView == null) return;
 
-        // 先检测 video 是否在播放
-        checkVideoPlayingAndThen(playing -> {
-            if (!playing) {
-                android.util.Log.i("MoonTV", "❌ 没在播放，跳过 PiP/悬浮窗");
+        // 先启动播放服务（上岛），不管 PiP 成不成功都要有 MediaStyle 通知
+        startOrUpdatePlaybackService();
+
+        // 方案 1：直接尝试 PiP（同步调用，最快）
+        if (supportsPip()) {
+            try {
+                android.util.Log.i("MoonTV", "🚀 尝试进入 PiP...");
+                enterPictureInPictureModeSafe();
+                android.widget.Toast.makeText(this, "✅ 已进入小窗模式",
+                    android.widget.Toast.LENGTH_SHORT).show();
                 return;
+            } catch (Exception e) {
+                android.util.Log.w("MoonTV", "⚠️ PiP 异常: " + e.getMessage());
             }
-            // 优先 PiP
-            if (supportsPip()) {
-                try {
-                    enterPictureInPictureModeSafe();
-                    android.util.Log.i("MoonTV", "✅ 已进入 PiP");
-                    return;
-                } catch (Exception e) {
-                    android.util.Log.w("MoonTV", "⚠️ PiP 失败，降级悬浮窗: " + e.getMessage());
-                }
-            }
-            // 降级：悬浮窗
-            tryEnterFloatingWindow();
-        });
+        }
+
+        // 方案 2：降级悬浮窗（需要先强制 video 进全屏拿到 customView）
+        android.widget.Toast.makeText(this, "PiP 不可用，尝试悬浮窗...",
+            android.widget.Toast.LENGTH_SHORT).show();
+        android.util.Log.i("MoonTV", "🚀 降级悬浮窗...");
+        tryEnterFloatingWindow();
     }
 
     /**
@@ -839,42 +842,47 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 构建 PiP 参数（宽高比跟随视频）
+     * 进入 PiP（画中画）模式
+     * 简化版：尽量让它先工作起来
      */
     private void enterPictureInPictureModeSafe() {
         if (!supportsPip() || isInPipMode) return;
+
         try {
-            // 默认 16:9，匹配视频常见比例
-            Rational aspectRatio = new Rational(16, 9);
+            android.util.Log.i("MoonTV", "enterPictureInPictureModeSafe: 开始");
 
             PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-                    .setAspectRatio(aspectRatio)
-                    .setAutoEnterEnabled(false)
-                    .setSeamlessResizeEnabled(true);
+                    .setAspectRatio(new android.util.Rational(16, 9));
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+ 支持 source rect hint
-                Rect sourceRect = new Rect();
-                webView.getGlobalVisibleRect(sourceRect);
-                builder.setSourceRectHint(sourceRect);
-            }
+            PictureInPictureParams params = builder.build();
 
-            enterPictureInPictureMode(builder.build());
-        } catch (IllegalStateException | IllegalArgumentException e) {
-            // 某些 ROM 可能限制 PiP
-            e.printStackTrace();
+            // 关键方法
+            boolean success = enterPictureInPictureMode(params);
+
+            android.util.Log.i("MoonTV", "enterPictureInPictureMode 返回: " + success);
+            // 注意：onPictureInPictureModeChanged 会异步回调确认是否真的进入
+
+        } catch (IllegalStateException e) {
+            // 可能原因：Activity 不在前台、没有 MediaSession、系统禁止等
+            android.util.Log.e("MoonTV", "PiP IllegalStateException: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            android.util.Log.e("MoonTV", "PiP IllegalArgumentException: " + e.getMessage());
+        } catch (Exception e) {
+            android.util.Log.e("MoonTV", "PiP Exception: " + e.getMessage());
         }
     }
 
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode);
+        android.util.Log.i("MoonTV", "onPictureInPictureModeChanged: " + isInPictureInPictureMode);
         onPipModeChanged(isInPictureInPictureMode);
     }
 
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, android.content.res.Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        android.util.Log.i("MoonTV", "onPictureInPictureModeChanged(2): " + isInPictureInPictureMode);
         onPipModeChanged(isInPictureInPictureMode);
     }
 
@@ -884,32 +892,20 @@ public class MainActivity extends Activity {
         if (webView == null) return;
 
         if (nowInPip) {
-            // 进入 PiP：告诉 Web 端
-            webView.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('moontv:pip-changed',{detail:{isInPip:true}}));", null);
+            android.widget.Toast.makeText(this, "✅ 已进入画中画",
+                android.widget.Toast.LENGTH_SHORT).show();
         } else {
-            // 退出 PiP：恢复播放
-            // Android O+ PiP 模式 WebView 里的 video 可能被暂停，需要重新 play
-            webView.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('moontv:pip-changed',{detail:{isInPip:false}}));", null);
-
-            // ✅ 关键：尝试恢复播放中的 video
+            android.widget.Toast.makeText(this, "已退出画中画",
+                android.widget.Toast.LENGTH_SHORT).show();
+            // 退出 PiP：恢复 video 播放
             String resumeVideo =
                 "(function() {" +
                 "  var videos = document.querySelectorAll('video');" +
                 "  videos.forEach(function(v) {" +
-                "    if (v.paused) {" +
-                "      v.play().then(function() {" +
-                "        console.log('[MoonTV] ✅ Video resumed after PiP exit');" +
-                "      }).catch(function(e) {" +
-                "        console.log('[MoonTV] ⚠️ play() failed: ' + e.message);" +
-                "      });" +
-                "    }" +
+                "    if (v.paused) v.play().catch(function(){});" +
                 "  });" +
                 "})();";
             webView.evaluateJavascript(resumeVideo, null);
-
-            // 恢复沉浸式 padding
             setupImmersive();
         }
     }
