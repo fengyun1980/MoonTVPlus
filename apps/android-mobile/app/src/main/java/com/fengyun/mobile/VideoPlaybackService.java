@@ -16,15 +16,15 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.support.v4.media.MediaMetadataCompat;
+import android.support.v4.media.session.MediaSessionCompat;
+import android.support.v4.media.session.PlaybackStateCompat;
 import android.view.KeyEvent;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import androidx.media.MediaMetadataCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.media.session.MediaButtonReceiver;
-import androidx.media.session.MediaSessionCompat;
-import androidx.media.session.PlaybackStateCompat;
 
 import com.fengyun.mobile.IslandManager.HyperOSInfo;
 
@@ -185,12 +185,6 @@ public class VideoPlaybackService extends Service {
                 super.onPause();
                 notifyPaused();
                 sendJsEvent("pause");
-            }
-
-            @Override
-            public void onPlayPause() {
-                super.onPlayPause();
-                togglePlayPause();
             }
 
             @Override

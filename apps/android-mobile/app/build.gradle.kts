@@ -76,7 +76,7 @@ android {
 }
 
 dependencies {
-    // AndroidX 媒体会话（用于 MediaStyle 通知自动上岛）
-    implementation("androidx.media:media:1.7.0")
+    // AndroidX 媒体会话（MediaSession + MediaStyle 自动上岛）
+    implementation("androidx.media:media:1.8.0")
     implementation("androidx.core:core:1.13.1")
 }
