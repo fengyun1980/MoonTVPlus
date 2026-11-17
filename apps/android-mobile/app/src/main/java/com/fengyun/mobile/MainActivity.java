@@ -3,14 +3,14 @@ package com.fengyun.mobile;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.NotificationManager;
+import android.app.AlertDialog;
 import android.app.PictureInPictureParams;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
@@ -32,7 +32,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -50,6 +52,8 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends Activity {
 
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
+    private static final String PREFS_NAME = "fengyun_prefs";
+    private static final String KEY_BASE_URL = "base_url";
 
     private FrameLayout rootContainer;
     private WebView webView;
@@ -60,6 +64,7 @@ public class MainActivity extends Activity {
     private boolean isPlaying = false;
     private String currentTitle = "";
     private String currentCover = "";
+    private String currentBaseUrl = "";
 
     private VideoPlaybackService playbackService;
     private boolean serviceBound = false;
@@ -100,8 +105,68 @@ public class MainActivity extends Activity {
         requestNotificationPermissionIfNeeded();
         bindPlaybackService();
 
-        String url = buildAppUrl(BuildConfig.BASE_URL);
-        webView.loadUrl(url);
+        // 从 SharedPreferences 读取 BASE_URL，没有则弹窗让用户填
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String savedUrl = prefs.getString(KEY_BASE_URL, null);
+
+        if (savedUrl != null && !savedUrl.trim().isEmpty()) {
+            currentBaseUrl = buildAppUrl(savedUrl);
+            webView.loadUrl(currentBaseUrl);
+        } else {
+            showBaseUrlDialog(true);
+        }
+    }
+
+    /**
+     * 弹出服务器地址输入对话框
+     * @param firstLaunch true=首次启动，必须填；false=用户主动修改
+     */
+    private void showBaseUrlDialog(boolean firstLaunch) {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String current = prefs.getString(KEY_BASE_URL, "");
+
+        EditText input = new EditText(this);
+        input.setHint("https://your-server.com");
+        input.setText(current);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        input.setSingleLine(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(48, 24, 48, 0);
+        input.setLayoutParams(lp);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(firstLaunch ? "🏝️ 欢迎使用风云影视" : "修改服务器地址")
+                .setMessage(firstLaunch
+                        ? "请输入你的服务端地址（例如 https://your-server.com）\n\n" +
+                          "后续可在 APP 设置里修改。长按返回键也可弹出此对话框。"
+                        : "输入新的服务端地址：")
+                .setView(input)
+                .setPositiveButton("确定", (dialog, which) -> {
+                    String raw = input.getText().toString().trim();
+                    if (raw.isEmpty()) {
+                        // 空地址再弹一次
+                        showBaseUrlDialog(firstLaunch);
+                        return;
+                    }
+                    String url = buildAppUrl(raw);
+                    prefs.edit().putString(KEY_BASE_URL, url).apply();
+                    currentBaseUrl = url;
+                    if (firstLaunch) {
+                        webView.loadUrl(url);
+                    } else {
+                        webView.loadUrl(url);
+                    }
+                })
+                .setNegativeButton(firstLaunch ? "退出" : "取消", (dialog, which) -> {
+                    if (firstLaunch) {
+                        finish();
+                    }
+                });
+
+        builder.setCancelable(!firstLaunch); // 首次启动不可取消
+        builder.show();
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -412,7 +477,22 @@ public class MainActivity extends Activity {
 
     /**
      * 返回键 —— 优先 PiP → 其次 WebView 历史 → 最后退出
+     * 长按返回键弹出"修改服务器地址"对话框
      */
+    private long lastBackPressTime = 0;
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // 长按返回键 → 修改服务器地址
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
+                && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.isLongPress()) {
+            showBaseUrlDialog(false);
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
     @Override
     public void onBackPressed() {
         // 1. 如果在 PiP 里，先退出 PiP
