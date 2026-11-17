@@ -127,20 +127,45 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        try {
+            requestWindowFeature(Window.FEATURE_NO_TITLE);
+        } catch (Throwable ignored) {}
         setContentView(R.layout.activity_main);
 
         rootContainer = findViewById(R.id.root_container);
         fullscreenContainer = findViewById(R.id.fullscreen_container);
         exoPlayerView = findViewById(R.id.exo_player_view);  // ✅ 找到 PlayerView
 
-        // ✅ 初始化 ExoPlayer（全局单例，整个 Activity 生命周期复用）
-        initExoPlayer();
+        try {
+            // ✅ 初始化 ExoPlayer（全局单例，整个 Activity 生命周期复用）
+            initExoPlayer();
+        } catch (Throwable t) {
+            Log.e(TAG, "initExoPlayer failed: " + t.getMessage(), t);
+        }
 
-        loadSavedUrl();
-        initWebView();
-        setupImmersive();
-        loadUrl();
+        try {
+            loadSavedUrl();
+        } catch (Throwable t) {
+            Log.e(TAG, "loadSavedUrl failed: " + t.getMessage(), t);
+        }
+
+        try {
+            initWebView();
+        } catch (Throwable t) {
+            Log.e(TAG, "initWebView failed: " + t.getMessage(), t);
+        }
+
+        try {
+            setupImmersive();
+        } catch (Throwable t) {
+            Log.e(TAG, "setupImmersive failed: " + t.getMessage(), t);
+        }
+
+        try {
+            loadUrl();
+        } catch (Throwable t) {
+            Log.e(TAG, "loadUrl failed: " + t.getMessage(), t);
+        }
     }
 
     @Override
@@ -226,24 +251,24 @@ public class MainActivity extends Activity {
 
     private void initExoPlayer() {
         if (exoPlayer != null) return;
+        try {
+            OkHttpClient okHttp = new OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build();
 
-        OkHttpClient okHttp = new OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .build();
+            OkHttpDataSource.Factory dataSourceFactory = new OkHttpDataSource.Factory(okHttp);
 
-        OkHttpDataSource.Factory dataSourceFactory = new OkHttpDataSource.Factory(okHttp);
+            DefaultMediaSourceFactory mediaSourceFactory = new DefaultMediaSourceFactory(dataSourceFactory);
 
-        DefaultMediaSourceFactory mediaSourceFactory = new DefaultMediaSourceFactory(dataSourceFactory);
+            exoPlayer = new ExoPlayer.Builder(this)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build();
 
-        exoPlayer = new ExoPlayer.Builder(this)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build();
-
-        // 绑定到 PlayerView 覆盖层
-        exoPlayerView.setPlayer(exoPlayer);
-        exoPlayerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+            // 绑定到 PlayerView 覆盖层
+            exoPlayerView.setPlayer(exoPlayer);
+            exoPlayerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
 
             // 监听播放状态（用于上岛）
             exoPlayer.addListener(new Player.Listener() {
@@ -268,6 +293,12 @@ public class MainActivity extends Activity {
                         Toast.LENGTH_LONG).show();
                 }
             });
+            Log.i(TAG, "✅ ExoPlayer 初始化成功");
+        } catch (Throwable t) {
+            Log.e(TAG, "❌ ExoPlayer 初始化失败，原生播放不可用: " + t.getMessage(), t);
+            Toast.makeText(this, "原生播放器加载失败，使用网页播放", Toast.LENGTH_SHORT).show();
+            exoPlayer = null;
+        }
     }
 
     private String getCurrentVideoTitle() {

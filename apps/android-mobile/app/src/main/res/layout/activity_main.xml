@@ -32,6 +32,7 @@
         android:visibility="gone" />
 
     <!-- Layer 3: ExoPlayer PlayerView 覆盖层 —— 原生视频渲染 -->
+    <!-- 重要：不要设自定义 controller_layout_id，否则缺少 exo_progress/exo_controller 等标准 ID 会导致 PlayerView 内部 NPE 崩溃 -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/exo_player_view"
         android:layout_width="match_parent"
@@ -41,7 +42,6 @@
         android:keepScreenOn="true"
         app:resize_mode="fit"
         app:use_controller="true"
-        app:controller_layout_id="@layout/exo_player_controller"
         xmlns:app="http://schemas.android.com/apk/res-auto" />
 
 </FrameLayout>
